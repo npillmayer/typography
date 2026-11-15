@@ -20,14 +20,21 @@ type ShapingKey struct {
 	Features   []contracts.ShapeFeature
 	Spacing    contracts.SpacingMode
 }
+// ShapingSpan associates a resolved key with a half-open processed UTF-8 byte
+// range. Start is also the origin of the key's scalar feature domain.
 type ShapingSpan struct {
 	Start, End uint64 // processed UTF-8 bytes; Start is the feature coordinate origin
 	Key        ShapingKey
 }
+// PaintSpan retains document paint over a half-open processed UTF-8 byte range,
+// independently of coalesced shaping boundaries.
 type PaintSpan struct {
 	Start, End uint64
 	Paint      style.Paint
 }
+// Itemization combines prepared styled text, selected font bindings, shaping
+// metadata and original paint spans. Metadata slices are caller-owned; text retains
+// private style identities needed by subsequent resolution.
 type Itemization struct {
 	Text     styled.Text
 	Bindings []Binding

@@ -35,10 +35,13 @@ type Input struct {
 // supported. Width is nonnegative finite DU, not pixels or terminal columns.
 type Constraints struct{ Width dimen.DU }
 
+// Breaker selects the paragraph line-breaking algorithm; no zero default is implied.
 type Breaker string
 
 const (
+	// FirstFit selects greedy first-fit line breaking.
 	FirstFit   Breaker = "firstfit"
+	// KnuthPlass selects Knuth-Plass paragraph optimization.
 	KnuthPlass Breaker = "knuth-plass"
 )
 
@@ -55,28 +58,44 @@ type Params struct {
 	LineLayout  *LineLayout // Required only with CSSLineHeight; kept out of shaper styles.
 }
 
+// Stage identifies the operation that failed, independently of its underlying cause.
 type Stage string
 
 const (
+	// StageInput identifies input/parameter validation and entry cancellation.
 	StageInput     Stage = "input"
+	// StageParagraph identifies bidi paragraph construction.
 	StageParagraph Stage = "paragraph"
+	// StageEncode identifies text-only Run encoding.
 	StageEncode    Stage = "encode"
+	// StagePrepare identifies reusable horizontal preparation.
 	StagePrepare   Stage = "prepare"
+	// StageMeasure identifies intrinsic evaluation after entry validation.
 	StageMeasure   Stage = "measure"
+	// StageBind identifies binding prepared material to atomic advances.
 	StageBind      Stage = "bind"
+	// StageBreak identifies line breaking and breakpoint extraction.
 	StageBreak     Stage = "break"
+	// StageFreeze identifies freezing selected lines.
 	StageFreeze    Stage = "freeze"
+	// StageAssemble identifies vertical assembly and atomic placement.
 	StageAssemble  Stage = "assemble"
 )
 
+// ErrInvalidInput marks invalid paragraph input or parameter values.
+// Use errors.Is through Error to test it.
 var ErrInvalidInput = errors.New("invalid paragraph input")
 
+// Error records the failed paragraph stage and preserves the original cause.
+// Failed operations publish no partial result.
 type Error struct {
 	Stage Stage
 	Err   error
 }
 
+// Error formats the paragraph stage and cause.
 func (e *Error) Error() string { return fmt.Sprintf("paragraph %s: %v", e.Stage, e.Err) }
+// Unwrap exposes the cause for errors.Is and errors.As.
 func (e *Error) Unwrap() error { return e.Err }
 
 // Result retains frozen content and its boxed vlist. Counts, break endpoints and

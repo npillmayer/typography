@@ -1,3 +1,7 @@
+// Package discovery resolves ordered font requests using explicit search and
+// loading services. It owns generic-family policy, session caching and detached
+// substitution evidence without importing a concrete backend. Calls on a session
+// are serialized with cancellation; only successful read/parse results are cached.
 package discovery
 
 import (
@@ -27,12 +31,16 @@ type FontDiagnostic struct {
 	Request                                      fontresource.Request
 	Substituted                                  bool
 }
+// ResolutionError identifies the request, lookup, read or parse stage and
+// preserves its underlying cause for errors.Is and errors.As.
 type ResolutionError struct {
 	Stage string
 	Err   error
 }
 
+// Error formats the stage and underlying failure.
 func (e *ResolutionError) Error() string { return e.Stage + ": " + e.Err.Error() }
+// Unwrap returns the underlying failure.
 func (e *ResolutionError) Unwrap() error { return e.Err }
 
 type cachedResolution struct {
@@ -52,6 +60,10 @@ type Discovery struct {
 	cache     map[string]cachedResolution
 }
 
+// New creates a session with explicit search/loading services and copied generic
+// family mappings. Keys are case-insensitive; empty mapped names are rejected.
+// Provider names are snapshotted in order. Create a new session for policy changes;
+// keep injected services stable and usable for the session lifetime.
 func New(search Searcher, loader typography.FaceLoader, generics map[string]string) (*Discovery, error) {
 	if search == nil || loader == nil {
 		return nil, fmt.Errorf("search and loader services required")
@@ -66,6 +78,10 @@ func New(search Searcher, loader typography.FaceLoader, generics map[string]stri
 	return d, nil
 }
 
+// Descriptors converts ordered, trimmed CSS families into neutral requests.
+// Weight must be 100..900 in steps of 100 (zero means 400); supported slants are
+// normal, italic and oblique (empty means normal). It converts weights to legacy
+// identity codes without resolving generic families or accessing providers.
 func Descriptors(request FontRequest) ([]fontresource.Request, error) {
 	weight := request.Weight
 	if weight == 0 {
@@ -179,12 +195,16 @@ func (d *Discovery) Resolve(ctx context.Context, request FontRequest) (*fontreso
 	return nil, diagnostics, &ResolutionError{"lookup", err}
 }
 
+// DescriptorRule pairs style-match criteria with an ordered discovery request.
+// Family, Weight and Slant become typography.Rule criteria after resolution.
 type DescriptorRule struct {
 	Family  string
 	Weight  int
 	Slant   string
 	Request FontRequest
 }
+// DescriptorSettings supplies discovery requests for the default, ordered rules
+// and fallbacks, plus the resolved paragraph font size in DU.
 type DescriptorSettings struct {
 	Default   FontRequest
 	Rules     []DescriptorRule
@@ -261,6 +281,7 @@ type DiscoveryPolicy struct {
 	Generics  map[string]string
 }
 
+// Clone detaches provider names and generic mappings. A nil receiver returns nil.
 func (p *DiscoveryPolicy) Clone() *DiscoveryPolicy {
 	if p == nil {
 		return nil
@@ -278,12 +299,16 @@ type Searcher interface {
 	Names() []string
 	Search(context.Context, fontresource.Request, fontresource.Request, bool) (SearchResult, error)
 }
+// SearchResult carries the selected immutable resource and ordered diagnostic
+// evidence, including whether the provider explicitly substituted a match.
 type SearchResult struct {
 	Resource    *fontresource.Resource
 	Provider    string
 	Substituted bool
 	Diagnostics []FontDiagnostic
 }
+// Resolution combines selected settings with detached discovery provenance for
+// application/replay consumers. It contains no backend services.
 type Resolution struct {
 	typography.Settings
 	DiscoveryPolicy       *DiscoveryPolicy
@@ -291,6 +316,8 @@ type Resolution struct {
 	ResolutionDiagnostics []FontDiagnostic
 }
 
+// Clone detaches settings slices, discovery policy, descriptor requests and
+// diagnostics, while sharing immutable resources. A nil receiver returns nil.
 func (r *Resolution) Clone() *Resolution {
 	if r == nil {
 		return nil

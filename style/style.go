@@ -24,7 +24,9 @@ type Style struct {
 
 var _ styled.Style = Style{}
 
+// Equals compares every document field, including paint.
 func (s Style) Equals(other styled.Style) bool { o, ok := other.(Style); return ok && s == o }
+// String returns a diagnostic representation with size in big points.
 func (s Style) String() string {
 	return fmt.Sprintf("%s %.3g bp weight=%d %s color=%s lang=%s dir=%s white-space=%s", s.Family, s.EmSize.Points(), s.Weight, s.Slant, s.Color, s.Language, s.Direction, s.WhiteSpace)
 }
@@ -39,11 +41,15 @@ type Typography struct {
 	Slant, Language, WhiteSpace, UnicodeBidi string
 	Direction                                bidi.Direction
 }
+// Paint contains rendering values kept separate from shaping.
 type Paint struct{ Color string }
 
+// Typography returns the color-free value projection. Equality of projections
+// alone does not authorize coalescing resolved shaping runs.
 func (s Style) Typography() Typography {
 	return Typography{s.Family, s.EmSize, s.Weight, s.Slant, s.Language, s.WhiteSpace, s.UnicodeBidi, s.Direction}
 }
+// Paint returns the rendering projection as an independent value.
 func (s Style) Paint() Paint { return Paint{Color: s.Color} }
 
 // Span uses half-open UTF-8 byte coordinates in processed paragraph text.

@@ -3,6 +3,7 @@ package render_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"reflect"
 	"slices"
@@ -149,5 +150,87 @@ func TestRetainedProofFailureAndCancellation(t *testing.T) {
 	input.VList = nil
 	if p, err := render.BuildParagraphProof(t.Context(), input, render.Services{Backend: b, Identity: b}); p != nil || err == nil {
 		t.Fatal("missing placements reconstructed")
+	}
+}
+
+// tracingBackend exposes service ordering, including late errors after a prior
+// fragment has already contributed to the private proof under construction.
+type tracingBackend struct {
+	backend
+	events []string
+	failAt string
+	err    error
+}
+
+func (b *tracingBackend) Identify(face contracts.FontFace) (typography.Info, error) {
+	b.events = append(b.events, "identity")
+	if b.failAt == "identity" {
+		return typography.Info{}, b.err
+	}
+	return b.backend.Identify(face)
+}
+
+func (b *tracingBackend) VisualOrder(g []contracts.ShapedGlyph, d xbidi.Direction) ([]contracts.ShapedGlyph, error) {
+	b.events = append(b.events, "visual")
+	if b.failAt == "visual" && d == xbidi.RightToLeft {
+		return nil, b.err
+	}
+	return b.backend.VisualOrder(g, d)
+}
+
+func (b *tracingBackend) Outline(face contracts.FontFace, gid uint32) (render.Outline, error) {
+	b.events = append(b.events, "outline")
+	return b.backend.Outline(face, gid)
+}
+
+func TestRetainedProofServiceOrderAndFailurePrecedence(t *testing.T) {
+	sentinel := errors.New("service unavailable")
+	for _, tc := range []struct {
+		name, failAt string
+		badPaint     bool
+		events       []string
+	}{
+		{"success", "", false, []string{"identity", "visual", "outline", "identity", "visual", "outline", "outline"}},
+		{"identity precedes paint", "identity", true, []string{"identity"}},
+		{"paint precedes ordering", "", true, []string{"identity"}},
+		{"late ordering failure", "visual", false, []string{"identity", "visual", "outline", "identity", "visual"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input, face := proofInput(t)
+			face.deny = true
+			if tc.badPaint {
+				input.Paint[0].Paint.Color = "invalid color"
+			}
+			b := &tracingBackend{failAt: tc.failAt, err: sentinel}
+			p, err := render.BuildParagraphProof(t.Context(), input, render.Services{Backend: b, Identity: b})
+			if !reflect.DeepEqual(b.events, tc.events) {
+				t.Fatalf("service calls = %v, want %v", b.events, tc.events)
+			}
+			if tc.failAt != "" {
+				if p != nil || !errors.Is(err, sentinel) {
+					t.Fatalf("lost cause or published partial proof: %v, %v", p, err)
+				}
+				if tc.failAt == "visual" {
+					line := input.VList.Lines()[0].Horizontal
+					knotIndex := -1
+					for k := line.FirstKnot; k < line.FirstKnot+line.KnotCount; k++ {
+						if tx, ok := input.Frozen.CopyText(k); ok && tx.Context.Params.Direction == xbidi.RightToLeft {
+							knotIndex = k
+							break
+						}
+					}
+					want := fmt.Sprintf("glyph proof line 0 knot %d: %v", knotIndex, sentinel)
+					if knotIndex < 0 || err.Error() != want {
+						t.Fatalf("ordering error = %v, want %q", err, want)
+					}
+				}
+			} else if tc.badPaint {
+				if p != nil || err == nil || err.Error() != `unsupported proof color "invalid color": use a named or hex color` {
+					t.Fatalf("paint error = %v, proof = %v", err, p)
+				}
+			} else if err != nil || p == nil || len(p.Glyphs) != 3 {
+				t.Fatalf("proof = %v, error = %v", p, err)
+			}
+		})
 	}
 }

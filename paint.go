@@ -10,7 +10,9 @@ import (
 type PaintPolicy string
 
 const (
+	// GlyphBoundary coalesces equivalent typography across paint changes.
 	GlyphBoundary       PaintPolicy = "glyph-boundary-v1"
+	// LegacyStyleBoundary preserves document style boundaries for old replay.
 	LegacyStyleBoundary PaintPolicy = "style-boundary-v1"
 )
 

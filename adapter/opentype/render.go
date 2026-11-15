@@ -15,6 +15,8 @@ import (
 // typography contracts. It owns no mutable state and installs no global backend.
 type Services struct{}
 
+// Identify returns detached retained identity for a nonnil OpenType Face.
+// Foreign faces are rejected and source paths are never reopened.
 func (Services) Identify(value contracts.FontFace) (typography.Info, error) {
 	f, ok := value.(*Face)
 	if !ok || f == nil {
@@ -23,6 +25,9 @@ func (Services) Identify(value contracts.FontFace) (typography.Info, error) {
 	i := f.Info()
 	return typography.Info{ResourceID: i.ResourceID, Origin: i.Origin, Path: i.Path, Family: i.Family, Subfamily: i.Subfamily, SHA256: i.SHA256, Warnings: i.Warnings}, nil
 }
+// Outline converts a retained OpenType glyph outline into an SVG path and
+// control points in font units with downward-positive Y. Foreign/nil faces are
+// rejected; lazy outline parsing shares the face lock with shaping and coverage.
 func (Services) Outline(value contracts.FontFace, gid uint32) (render.Outline, error) {
 	f, ok := value.(*Face)
 	if !ok || f == nil {
@@ -60,6 +65,8 @@ func (Services) Outline(value contracts.FontFace, gid uint32) (render.Outline, e
 	}
 	return render.Outline{Path: path.String(), Points: points}, nil
 }
+// VisualOrder delegates directional-fragment ordering to the OpenType backend.
+// The glyph slice must be caller-owned; consumers must not reorder frozen knots.
 func (Services) VisualOrder(g []contracts.ShapedGlyph, d bidi.Direction) ([]contracts.ShapedGlyph, error) {
 	return otshape.VisualOrder(g, d, true)
 }

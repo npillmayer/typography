@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
 	"unicode/utf8"
 
 	"github.com/npillmayer/cords/styled"
@@ -18,11 +17,15 @@ import (
 // half-leading. Unlike ProofCompatibility, it adds no interline/trailing kern.
 const CSSLineHeight SpacingPolicy = "css-line-height-v1"
 
+// LineHeightKind selects font metrics, an em multiplier or a resolved DU length.
 type LineHeightKind string
 
 const (
+	// NormalHeight uses ascent, descent and nonnegative font line gap.
 	NormalHeight LineHeightKind = "normal"
+	// FactorHeight multiplies the receiving run's em size.
 	FactorHeight LineHeightKind = "factor"
+	// LengthHeight uses an already resolved DU length.
 	LengthHeight LineHeightKind = "length"
 )
 
@@ -60,6 +63,7 @@ type LineLayout struct {
 	Runs    []LineHeightSpan `json:",omitempty"`
 }
 
+// Clone returns a value copy with a detached Runs slice.
 func (l LineLayout) Clone() *LineLayout {
 	l.Runs = append([]LineHeightSpan(nil), l.Runs...)
 	return &l
@@ -198,129 +202,4 @@ func sourceMetrics(ctx context.Context, text styled.Text, cfg khipu.Config, excl
 		runs = append(runs, metricRun{run.Position, run.Position + run.Length, m})
 	}
 	return runs, nil
-}
-
-func assembleLineHeight(ctx context.Context, f *khipu.FrozenKhipu, l *LineLayout, text styled.Text, cfg khipu.Config, atomics map[contracts.AtomicID]AtomicBox) (*VList, error) {
-	strut, err := cssFaceMetrics(cfg.Streaming.Defaults)
-	if err != nil {
-		return nil, err
-	}
-	sa, sd, err := l.Default.extents(strut)
-	if err != nil {
-		return nil, err
-	}
-	var excluded []khipu.ByteRange
-	for i := 0; i < f.KnotCount(); i++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if _, ok := f.Atomic(i); ok {
-			knot, _ := f.Knot(i)
-			excluded = append(excluded, knot.Source.Bytes)
-		}
-	}
-	sort.Slice(excluded, func(i, j int) bool { return excluded[i].Start < excluded[j].Start })
-	runs, err := sourceMetrics(ctx, text, cfg, excluded)
-	if err != nil {
-		return nil, err
-	}
-	v := &VList{frozen: f}
-	top := 0.0
-	for i := 0; i < f.LineCount(); i++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		line, _ := f.Line(i)
-		a, d := sa, sd
-		contribute := func(start, end uint64, m fontExtents) error {
-			add := func(h LineHeight) error {
-				x, y, e := h.extents(m)
-				if e != nil {
-					return e
-				}
-				a = math.Max(a, x)
-				d = math.Max(d, y)
-				return nil
-			}
-			at := start
-			j := sort.Search(len(l.Runs), func(j int) bool { return l.Runs[j].End > start })
-			for ; j < len(l.Runs) && l.Runs[j].Start < end; j++ {
-				s := l.Runs[j]
-				if s.Start > at {
-					if e := add(l.Default); e != nil {
-						return e
-					}
-				}
-				if e := add(s.Height); e != nil {
-					return e
-				}
-				at = min(end, s.End)
-			}
-			if at < end {
-				return add(l.Default)
-			}
-			return nil
-		}
-		for k := line.FirstKnot; k < line.FirstKnot+line.KnotCount; k++ {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			if id, ok := f.Atomic(k); ok {
-				box, exists := atomics[id]
-				if !exists {
-					return nil, fmt.Errorf("%w: missing atomic box", contracts.ErrIllegalArguments)
-				}
-				a = math.Max(a, float64(box.above())/float64(dimen.BP))
-				d = math.Max(d, 0)
-				continue
-			}
-			knot, _ := f.Knot(k)
-			src := knot.Source.Bytes
-			if src.End <= src.Start {
-				continue
-			} // generated paragraph fill
-			tx, ok := f.CopyText(k)
-			if ok {
-				if len(tx.Glyphs) == 0 {
-					continue
-				} // silent discretionary material
-				m, e := cssMetrics(tx.Context.Params.Font, tx.Context.Scale, tx.Context.EmSize)
-				if e != nil {
-					return nil, e
-				}
-				if e = contribute(src.Start, src.End, m); e != nil {
-					return nil, e
-				}
-			} else {
-				// Glue has no retained text context; locate its prepared source font(s).
-				j := sort.Search(len(runs), func(j int) bool { return runs[j].end > src.Start })
-				for ; j < len(runs) && runs[j].start < src.End; j++ {
-					r := runs[j]
-					if e := contribute(max(src.Start, r.start), min(src.End, r.end), r.metrics); e != nil {
-						return nil, e
-					}
-				}
-			}
-		}
-		height := a + d
-		baseline := top + a
-		end := top + height
-		width := math.Max(line.Width.Points(), line.TargetWidth.Points())
-		if !dimension(height) || !dimension(end) || !dimension(math.Abs(baseline)) || !dimension(width) || line.Width < 0 || line.TargetWidth < 0 {
-			return nil, fmt.Errorf("%w: line-height line %d: geometry outside finite dimension range", contracts.ErrIllegalArguments, i)
-		}
-		v.lines = append(v.lines, Line{Index: i, Top: top, Baseline: baseline, Ascent: a, Descent: d, Height: height, Horizontal: line})
-		v.material = append(v.material, Material{Kind: LineBox, Child: i, Top: top, Extent: height})
-		v.box.Width = math.Max(v.box.Width, width)
-		if i == 0 {
-			v.box.Baseline = baseline
-			v.box.HasBaseline = true
-		}
-		top = end
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	v.box.Extent = top
-	return v, nil
 }

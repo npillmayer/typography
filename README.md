@@ -1,17 +1,29 @@
 # typography
 
+Typography is a Go library for turning styled text into laid-out paragraphs.
+It connects font selection and text preparation to khipu's shaping and
+line-breaking machinery, then assembles the resulting lines into reusable
+paragraph geometry. Applications can use it to handle font fallback, mixed
+scripts, line spacing and fixed inline objects, measure paragraph widths, and
+build drawing proofs from completed layouts. Font and shaping services are
+supplied explicitly, with OpenType adapters included; document parsing, CSS
+computation and the user interface remain with the application.
+
 Paragraph typography integration with explicit services:
 
 - Root: style mapping, script/grapheme itemization, bindings,
   pinned snapshots, IdentityProvider and FontSource.
-- `style`: document values, UTF-8 spans and typography/paint projections.
-- `fontresource`: bounded immutable bytes and fixed version-1 content/provenance IDs.
-- `discovery`: neutral CSS requests, explicit generic policy, ordered families,
+- [`style`](style/README.md): document values, UTF-8 spans and typography/paint projections.
+- [`fontresource`](fontresource/README.md): bounded immutable bytes and fixed version-1 content/provenance IDs.
+- [`discovery`](discovery/README.md): neutral CSS requests, explicit generic policy, ordered families,
   session cache and detached resolution evidence; requires Searcher and FaceLoader.
-- `adapter/fontfind`: controlled providers, exact-match attestations, private
+- [`adapter/fontfind`](adapter/fontfind/README.md): controlled providers, exact-match attestations, private
   ResolverPipeline, enum conversion and resource snapshots; no default loader.
-- `render`: neutral retained-outline/visual-order interface for frozen proof walkers.
-- `adapter/opentype`: loader/face/scale/shaper, identity, retained outlines and
+- [`paragraph`](paragraph/README.md): reusable preparation, intrinsic measurement, breaking/freezing and
+  natural vertical assembly for text and fixed atomic inline boxes.
+- [`render`](render/README.md): neutral retained-outline/visual-order services, paint-source mapping
+  and retained paragraph proof construction.
+- [`adapter/opentype`](adapter/opentype/README.md): loader/face/scale/shaper, identity, retained outlines and
   generic VisualOrder implementation. No public parsed-font accessor.
 
 Root LoadSettings requires FaceLoader and Coverage; discovery.New requires explicit
@@ -43,11 +55,13 @@ Neutral tests use fake services; adapter tests use controlled providers and sibl
 opentype font fixtures. Run `go test ./...`, `go test -race ./...`, `go build ./...`
 and `go vet ./...`, then tytui suites including static pre-migration replay fixtures.
 
-Tytui replay version 2 records the new glyph-boundary policy. Version-1 fixtures
-keep legacy behavior and identities. Keep tests for ligatures, combining marks,
+Tytui replay defaults to version 2 for glyph-boundary compatibility layouts;
+explicit line-height uses version 3. Version-1 fixtures keep legacy behavior and identities. Keep tests for ligatures, combining marks,
 RTL/fallback/discretionaries, source maps and original feature-coordinate domains.
 
-Rendering bypass: M owns `ProjectStyles`, producing `TypographySpan` values with
+## Styles, paint and inline itemization
+
+The root resolver owns `ProjectStyles`, producing `TypographySpan` values with
 color-free `TypographyStyle` styles. The private run-domain identity preserves
 relative feature origins and explicit legacy document boundaries without carrying
 paint through styled.Text. Itemize/ItemizePolicy use the same projection and their
@@ -55,7 +69,7 @@ internal run styles contain no document Color field. ResolveStyle accepts projec
 styles and legacy document Style inputs. Keep document equality and JSON unchanged.
 The application retains `PaintSpan` values separately for rendering; tytui's
 Result.PaintSpans returns a detached copy. ItemizeWithMetadata remains compatible.
-No annotation package or replay version change is introduced.
+Typography projection does not change document equality or replay formats.
 
 For mixed inline input, use `Resolver.ItemizeInline(ctx, text, spans, atomics,
 policy)`. Each `contracts.AtomicAnchor` selects one U+FFFC OBJECT REPLACEMENT
@@ -85,7 +99,9 @@ attached markers bypass them. Removing those checks and moving font preparation
 elsewhere is a separate future task. Atomic-aware paragraph orchestration and
 vertical assembly are available through `paragraph.Prepare` and `Prepared.Layout`.
 
-Extraction step 7 is complete. Compose the OpenType implementation explicitly:
+## Service composition
+
+Compose the OpenType implementation explicitly:
 
 ```go
 services := opentype.Services{}
@@ -100,14 +116,16 @@ Application file selection can use discovery.Resolution{Settings: settings};
 descriptor resolution returns that same detached settings/provenance envelope.
 The resolver's Snapshot remains typography.Settings with pinned resources.
 
-General parser/stream/resource/discovery regressions live here. The feature-range
-and nonzero-cluster-base baseline moved from tytui into adapter/opentype; tytui
-retains DOM-to-resolver, frozen glyph, TUI and replay integration tests. A dependency
+General parser/stream/resource/discovery regressions, including feature-range
+and nonzero-cluster-base baselines, live here; tytui owns DOM-to-resolver, frozen
+glyph, TUI and replay integration tests. A dependency
 audit prevents generic packages from importing DOM, discovery or concrete adapters.
 The rendering bypass and legacy replay policies are unchanged.
 
+## Paragraph assembly and text-only execution
+
 `paragraph.Assemble(ctx, frozen, paragraph.Options{Policy:
-paragraph.ProofCompatibility, DefaultEmSize: size})` now assembles immutable frozen
+paragraph.ProofCompatibility, DefaultEmSize: size})` assembles immutable frozen
 lines into a boxed natural vertical list. `Box`, `Lines` and `Materials` return
 value geometry; `Frozen` retains the read-only source. Geometry uses fractional
 big points with downward-positive Y and a first-line reference baseline. The named
@@ -115,23 +133,25 @@ policy preserves tytui proof metrics, minimum 0.2em gap and trailing gap. Logica
 width encloses target/occupied widths; glyph ink is not measured. DefaultEmSize
 supplies 0.8/0.2/0.2em fallback metrics for lines without measured extents.
 
-This first slice has no rendering, DOM, discovery or concrete font dependency;
-callers supply already frozen output. There is no target-height packing, glue
-stretch/shrink or CSS line-height interpretation. Coordinates must remain below
+Frozen-only Assemble has no rendering, DOM, discovery or concrete font dependency;
+callers supply already frozen text output. It supports only ProofCompatibility
+and rejects atomic content without geometry. Target-height packing and vertical
+glue stretch/shrink are unsupported; CSS line-height requires Run or Prepared.Layout.
+Coordinates must remain below
 `dimen.Fil` expressed in big points; non-finite metrics, invalid input and overflow
-are errors. Tytui now retains assembly output in completed results and its glyph
+are errors. Tytui retains assembly output in completed results and its glyph
 renderer consumes placements without querying line metrics. Result.VList returns
 a detached handle; font/paint inspection input cannot reflow an existing proof.
 Replay rebuilds placements under the compatibility policy without changing v1/v2
 wire records or evidence. Rendering colors remain on their separate path.
 
 
-`paragraph.Run(ctx, input, params, config)` now provides prepared styled paragraph
+`paragraph.Run(ctx, input, params, config)` provides prepared styled paragraph
 → boxed vlist. Input carries styled.Text, base Direction and zero-byte Markup;
 Params separates Constraints.Width, Breaker and Assembly defaults. Config supplies
 khipu shaper/resolver/hyphenation contracts (zero uses khipu's synthetic backend).
-M's Itemize/ProjectStyles runs before P; input style identities are preserved. P
-never re-itemizes or reconstructs styles, normalizes whitespace or loads fonts.
+Root Itemize/ProjectStyles runs before paragraph execution; input style identities
+are preserved. The paragraph engine never re-itemizes or reconstructs styles, normalizes whitespace or loads fonts.
 Result retains Frozen/VList, paragraph-relative break endpoints, bidi runs and
 counts; errors carry the failed stage and return no partial output. Every call
 gets a fresh owner and freezes before assembly. Services must stay valid for
@@ -139,7 +159,9 @@ retained results. Typography-only text and separate renderer paint remain the
 application contract. The compatibility assembly policy preserves replay v1/v2.
 
 
-Paragraph-engine step 4 adds `CSSLineHeight` to Run with `Params.LineLayout`:
+## CSS-inspired line height
+
+Run and Prepared.Layout support `CSSLineHeight` with `Params.LineLayout`:
 normal, unitless factor or resolved DU length, plus optional nonoverlapping UTF-8
 LineHeightSpan overrides. Values bypass styled.Text and shaping. Explicit
 Streaming.Defaults font/size supplies the strut. Normal uses scaled ascent +
@@ -165,11 +187,11 @@ paint policies remain independent of layout. Owning tests cover exact geometry,
 inheritance/strut, mixed fonts/sizes, zero/negative leading, spaces/replacements,
 invalid values/metrics/ranges, cancellation and overflow. Tytui tests ligatures,
 RTL/fallback/paint, rendering without metrics, and offline v3 resaves/tampering
-alongside unchanged legacy fixtures. Full tests/races/build/vet pass in both modules.
+alongside unchanged legacy fixtures.
 
-Pipeline integration stages 3B/3C add reusable paragraph preparation and atomic
-vertical assembly. `Input.Atomics` extends the existing input record in place;
-use keyed struct literals. `Prepare(ctx, input, options, config)` consumes bidi
+## Reusable preparation and atomic layout
+
+`Input.Atomics` carries inline anchors; use keyed struct literals. `Prepare(ctx, input, options, config)` consumes bidi
 markup and shapes base text once. `Prepared.Layout(ctx, LayoutRequest)` derives
 atomic advances, binds fresh material, breaks, freezes and assembles. Serialize
 operations on one prepared handle. Preserve source/style/service lifetimes;
@@ -224,8 +246,10 @@ ownership, both breakers, signed/zero geometry, RTL/fill traversal, metric bypas
 cancellation/failure recovery and real-font feature domains. Typography and tytui
 retain their full ordinary/race/build/vet and replay compatibility checks.
 
-Pipeline integration stages 4B/4E expose ordinary and bounded explicit intrinsic
-measurement on the same prepared handle:
+## Intrinsic measurement
+
+The same prepared handle supports ordinary and bounded explicit intrinsic
+measurement:
 
 ```go
 widths, err := prepared.MeasureIntrinsic(ctx, khipu.MeasureRequest{
@@ -283,19 +307,23 @@ multibyte anchors, paint, detached ownership and cancellation. Tytui checks real
 nested documents and the unchanged static paragraph replay evidence.
 
 
-Pipeline stage 5 is verified across khipu, typography, tytui and css-box-layout
-(2026-11-15). Tytui supplies actual nested scheduling/reuse tests, independent
-signed geometry/rounding oracles, resize/failure lifetime sequences and retained
-real-font fixed/auto proofs. Owning prepared-result and render tests remain here;
-CSS types, document scheduling, normalization and publication stay outside this
-module. See [the integration record](../khipu/doc/PIPELINE_INTEGRATION.md) and
+## Development and integration checks
+
+Run ordinary/race suites, build and vet in typography and sibling tytui when
+changing shared boundaries, including the generic dependency audit, adapter
+service regressions and unchanged static paragraph replay fixtures. Cross-module
+pipeline changes also require the relevant khipu and css-box-layout checks.
+See [the integration record](../khipu/doc/PIPELINE_INTEGRATION.md) and
 [document proof fixtures](../tytui/documentlayout/testdata/README.md).
 
-Ordinary/race suites, build and vet passed in all four modules, including generic
-dependency audits, backend adapters and unchanged paragraph replay controls.
+Tytui owns nested scheduling/reuse tests, independent signed geometry/rounding
+oracles, resize/failure lifetime sequences and retained real-font fixed/auto
+proofs. Prepared-result and render ownership tests live here. CSS types, document
+scheduling, normalization and publication stay outside this module.
+
 Independent document layouts prepare afresh; operations sharing a resolver or
 prepared owner stay serialized, and retained font/scale services remain stable.
-No cross-invocation cache, speculative final callback, automatic intrinsic
-hyphenation or successive explicit splitting is added. The explicit-split limit
-is not a claim of general CSS min-content/hyphenation conformance. Glyph coverage
-stays caller-owned; relocation of the existing itemizer checks remains future work.
+There is no cross-invocation cache or speculative final callback. Automatic
+intrinsic hyphenation and successive explicit splitting are unsupported; bounded
+explicit splitting is not general CSS min-content/hyphenation conformance. Glyph
+coverage stays caller-owned; relocating existing itemizer checks is future work.

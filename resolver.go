@@ -24,6 +24,9 @@ type Settings struct {
 	Rules             []Rule
 	Fallbacks         []string
 }
+// Rule selects a font for the first matching family, CSS weight and slant.
+// Empty family/slant and zero weight are wildcards. Select exactly one Path or
+// Resource; family matching is case-insensitive against the style family list.
 type Rule struct {
 	Family      string
 	Weight      int
@@ -31,6 +34,8 @@ type Rule struct {
 	Resource    *fontresource.Resource
 }
 
+// Clone copies the settings and their slices, sharing immutable resources.
+// A nil receiver returns nil.
 func (s *Settings) Clone() *Settings {
 	if s == nil {
 		return nil
@@ -51,6 +56,9 @@ type Binding struct {
 	EmSize       dimen.DU
 	Script       string
 }
+// Resolver maps document styles and itemizes text using explicitly loaded faces.
+// Construct it with LoadSettings and serialize operations sharing a resolver.
+// Injected services and retained faces must remain valid for all retained results.
 type Resolver struct {
 	settings    Settings
 	faces       map[string]FaceEntry
@@ -61,6 +69,12 @@ type Resolver struct {
 	fallbackIDs []string
 }
 
+// LoadSettings loads all configured selections through the required Loader and
+// Coverage services; it installs no backend or discovery fallback. Size must be
+// positive and below dimen.Fil. Each selection must specify exactly one path or
+// resource. Retained resource identities are validated and substitution is rejected.
+// Settings slices are copied; resources and services remain shared. A nil context,
+// cancellation or any load/validation failure returns no resolver.
 func LoadSettings(ctx context.Context, s Settings, services Services) (*Resolver, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("nil context")
@@ -137,6 +151,8 @@ func LoadSettings(ctx context.Context, s Settings, services Services) (*Resolver
 	}
 	return r, nil
 }
+// Infos returns detached identity records, including detached warning slices,
+// in first-load order with duplicate resource identities removed.
 func (r *Resolver) Infos() []Info {
 	infos := make([]Info, len(r.infos))
 	for i, v := range r.infos {
@@ -145,6 +161,8 @@ func (r *Resolver) Infos() []Info {
 	}
 	return infos
 }
+// Defaults returns the selected default face and size with English language,
+// Latin script and elastic spacing. The face is retained, not cloned.
 func (r *Resolver) Defaults() contracts.ResolvedRunStyle {
 	return contracts.ResolvedRunStyle{Font: r.faces[r.defaultID].Face, EmSize: r.settings.Size, Language: language.English, Script: language.MustParseScript("Latn"), Spacing: contracts.SpacingElastic}
 }
@@ -156,6 +174,11 @@ func familyMatches(list, want string) bool {
 	}
 	return false
 }
+// ResolveStyle accepts projected TypographyStyle, legacy document style.Style,
+// and private styles returned by itemization. Nil preserves defaults. Document
+// paint is ignored; other style implementations are rejected. Feature slices are
+// detached, and itemized feature windows clip/rebase defaults without losing their
+// original scalar domains. Keep itemized style values intact when passing them on.
 func (r *Resolver) ResolveStyle(value styled.Style, defaults contracts.ResolvedRunStyle) (contracts.ResolvedRunStyle, error) {
 	if item, ok := value.(runStyle); ok {
 		var css styled.Style

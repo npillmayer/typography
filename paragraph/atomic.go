@@ -10,10 +10,14 @@ import (
 	"github.com/npillmayer/khipu/dimen"
 )
 
+// AtomicMargins contains resolved signed margins in DU, added to border dimensions.
+// CSS margin computation belongs to the input adapter.
 type AtomicMargins struct {
 	Top, Right, Bottom, Left dimen.DU
 }
 
+// AtomicAlignment selects how a preboxed occurrence meets the line baseline.
+// Only AlignBottomMarginEdge is supported; zero is invalid.
 type AtomicAlignment uint8
 
 // AlignBottomMarginEdge places the bottom margin edge on the line baseline.

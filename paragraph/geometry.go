@@ -1,6 +1,8 @@
-// Package paragraph lays out prepared styled text with injected khipu services
-// and assembles frozen horizontal lines into a boxed vertical list. It does not
-// interpret CSS, discover fonts or carry rendering paint.
+// Package paragraph prepares styled text with injected khipu services for
+// reusable intrinsic measurement and layout, including fixed atomic inline boxes.
+// It breaks/freezes horizontal material and assembles natural vertical lists.
+// Resolved CSS-inspired line-height values are supported; CSS parsing/cascade,
+// font discovery, rendering paint and height-constrained packing remain external.
 package paragraph
 
 // Box describes logical geometry in fractional big points (1/72 inch), with Y
@@ -14,15 +16,20 @@ type Box struct {
 	HasBaseline             bool
 }
 
-// Height and Depth are signed extents above/below the reference baseline. Extent is
+// Height returns the signed extent above the reference baseline. Extent is
 // authoritative: floating-point subtraction/addition need not round identically.
 func (b Box) Height() float64 { return b.Baseline }
+// Depth returns the signed extent below the reference baseline. Extent is
+// authoritative when floating-point recomposition would round differently.
 func (b Box) Depth() float64  { return b.Extent - b.Baseline }
 
+// MaterialKind distinguishes placed line boxes from fixed vertical kerns.
 type MaterialKind uint8
 
 const (
+	// LineBox is a placed frozen line referenced by Material.Child.
 	LineBox MaterialKind = iota
+	// Kern is fixed vertical spacing with no stretch or shrink.
 	Kern
 )
 

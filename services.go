@@ -36,18 +36,25 @@ type FaceLoader interface {
 type Coverage interface {
 	GlyphIndex(contracts.FontFace, rune) (uint32, error)
 }
+// Services supplies the required loader and nominal coverage implementation.
+// Neither service is installed implicitly; keep both valid for retained results.
 type Services struct {
 	Loader   FaceLoader
 	Coverage Coverage
 }
+// LoadFunc adapts a function to FaceLoader. The function must obey its selection
+// and retained-resource ownership contract.
 type LoadFunc func(context.Context, string, *fontresource.Resource) (FaceEntry, error)
 
+// Load delegates to f. A nil function is not a usable loader.
 func (f LoadFunc) Load(ctx context.Context, path string, r *fontresource.Resource) (FaceEntry, error) {
 	return f(ctx, path, r)
 }
 
+// CoverageFunc adapts a nominal glyph lookup function to Coverage.
 type CoverageFunc func(contracts.FontFace, rune) (uint32, error)
 
+// GlyphIndex delegates to f; zero denotes missing nominal coverage.
 func (f CoverageFunc) GlyphIndex(face contracts.FontFace, r rune) (uint32, error) { return f(face, r) }
 
 var _ contracts.StyleResolver = (*Resolver)(nil)

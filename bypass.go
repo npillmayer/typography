@@ -16,10 +16,13 @@ type TypographyStyle struct {
 	domain     uint64
 }
 
+// Equals compares typography and the private run domain, including boundaries
+// needed to preserve feature origins and legacy replay.
 func (s TypographyStyle) Equals(other styled.Style) bool {
 	o, ok := other.(TypographyStyle)
 	return ok && s == o
 }
+// String returns diagnostic typography and run-domain information.
 func (s TypographyStyle) String() string { return fmt.Sprintf("%+v domain=%d", s.Typography, s.domain) }
 
 // TypographySpan addresses processed paragraph UTF-8 bytes, like style.Span.

@@ -9,10 +9,11 @@ import (
 	"io"
 )
 
-// Slant and Weight are request values independent of discovery libraries.
-// Numeric values are fixed for version-1 identity encoding; Weight is not a CSS
-// numeric weight. Document styles use CSS weights, which adapters must convert.
+// Slant is a request code independent of discovery libraries. Its numeric
+// values are fixed for version-1 identity encoding.
 type Slant int
+// Weight is the legacy request identity code, not a numeric CSS weight.
+// Its fixed values must remain compatible with version-1 resource IDs.
 type Weight int
 
 const (
@@ -32,16 +33,21 @@ const (
 	Black      Weight = 5
 )
 
+// Request identifies a provider query using legacy slant/weight codes.
+// It records provenance; it does not perform discovery.
 type Request struct {
 	Pattern string
 	Style   Slant
 	Weight  Weight
 }
+// Origin records provider, resource name, location and original request.
+// All fields participate in the version-1 resource identity.
 type Origin struct {
 	Provider, Name, Location string
 	Request                  Request
 }
 
+// MaxBytes is the maximum retained font snapshot size: 64 MiB.
 const MaxBytes = 64 << 20
 
 // Resource owns a snapshot. Copies may share private immutable bytes safely.
@@ -51,6 +57,9 @@ type Resource struct {
 	origin Origin
 }
 
+// Read copies at most MaxBytes into an immutable snapshot with the given origin.
+// It reads at most MaxBytes+1 bytes to detect oversize input and returns no resource
+// on read failure, nil input or overflow. It does not parse fonts or close src.
 func Read(src io.Reader, origin Origin) (*Resource, error) {
 	if src == nil {
 		return nil, fmt.Errorf("font reader is nil")
@@ -69,7 +78,10 @@ func Read(src io.Reader, origin Origin) (*Resource, error) {
 func (r *Resource) Open() io.ReadCloser {
 	return io.NopCloser(struct{ io.Reader }{bytes.NewReader(r.data)})
 }
+// Origin returns the provenance record by value.
 func (r *Resource) Origin() Origin { return r.origin }
+// SHA256 returns the lowercase hexadecimal hash of retained content only.
+// Use ID for the versioned identity that also includes provenance.
 func (r *Resource) SHA256() string { return fmt.Sprintf("%x", sha256.Sum256(r.data)) }
 
 // ID is the version-1 provenance identity. It hashes Go-quoted provider, name,

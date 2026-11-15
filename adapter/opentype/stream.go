@@ -25,14 +25,22 @@ type Stream struct {
 
 var _ contracts.StreamingShaper = (*Stream)(nil)
 
+// NewStream creates a bounded synchronous shaper with positive channel capacity.
+// It starts no goroutines; arrange concurrent draining before calling Shape.
 func NewStream(capacity int) (*Stream, error) {
 	if capacity <= 0 {
 		return nil, otshape.ErrChannelCapacity
 	}
 	return &Stream{out: make(chan contracts.ShapedGlyph, capacity)}, nil
 }
+// Glyphs returns the output channel. Drain it concurrently with Shape.
+// Finish or a terminal shaping failure closes the channel.
 func (s *Stream) Glyphs() <-chan contracts.ShapedGlyph { return s.out }
+// Err returns the retained terminal shaping failure, or nil, under the stream lock.
 func (s *Stream) Err() error                           { s.mu.Lock(); defer s.mu.Unlock(); return s.err }
+// SetInitialCluster sets the scalar cluster base for the next Shape call.
+// It rejects busy or closed streams. Successful shaping advances the base by the
+// number of input runes, not UTF-8 bytes.
 func (s *Stream) SetInitialCluster(n uint32) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -45,6 +53,8 @@ func (s *Stream) SetInitialCluster(n uint32) error {
 	s.next = uint64(n)
 	return nil
 }
+// Finish closes output when idle and returns any retained shaping error.
+// It is idempotent once closed; a busy stream returns ErrStreamBusy without closing.
 func (s *Stream) Finish() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -57,6 +67,13 @@ func (s *Stream) Finish() error {
 	}
 	return s.err
 }
+// Shape synchronously produces glyphs while the caller drains Glyphs concurrently.
+// It accepts only a nonnil OpenType Face and holds its shared lock during shaping.
+// Feature ranges and output clusters use scalar coordinates; successful calls
+// advance the cluster base and leave output open for another run or Finish.
+// Busy/closed calls are rejected. After starting a run, any validation, shaping or
+// cancellation error is terminal: it is retained by Err and closes output. Context
+// is checked during reading/output; synchronous backend work retains its limits.
 func (s *Stream) Shape(ctx context.Context, p contracts.ShapeParams, src contracts.RuneReader, o contracts.ShapeBufferOptions) (err error) {
 	s.mu.Lock()
 	if s.running {
@@ -119,6 +136,7 @@ type countedReader struct {
 	base, count uint64
 }
 
+// ReadRune checks cancellation and tracks scalar positions without cluster overflow.
 func (r *countedReader) ReadRune() (rune, int, error) {
 	if err := r.ctx.Err(); err != nil {
 		return 0, 0, err
@@ -139,6 +157,8 @@ type glyphSink struct {
 	base uint64
 }
 
+// WriteGlyph rebases scalar clusters and emits bounded output with cancellation.
+// Missing glyphs and cluster overflow terminate shaping.
 func (s glyphSink) WriteGlyph(g otshape.GlyphRecord) error {
 	if s.base+uint64(g.Cluster) > math.MaxUint32 {
 		return otshape.ErrClusterOverflow

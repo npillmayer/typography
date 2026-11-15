@@ -12,12 +12,15 @@ import (
 	"github.com/npillmayer/khipu/dimen"
 )
 
+// SpacingPolicy selects compatibility spacing or resolved CSS-inspired line boxes.
 type SpacingPolicy string
 
 // ProofCompatibility reproduces tytui's original proof geometry, including its
 // minimum 0.2em gap and trailing gap. It is neither CSS normal nor TeX baseline glue.
 const ProofCompatibility SpacingPolicy = "proof-compatibility-v1"
 
+// Options selects assembly policy and compatibility fallback size.
+// CSSLineHeight uses explicit streaming defaults instead of DefaultEmSize.
 type Options struct {
 	Policy SpacingPolicy // Required; unknown policies are rejected.
 	// DefaultEmSize supplies fallback metrics when a line's measured ascent plus
@@ -52,9 +55,13 @@ type VList struct {
 // AtomicPlacements returns detached border origins in line/frozen-knot order.
 func (v *VList) AtomicPlacements() []AtomicPlacement { return slices.Clone(v.atomics) }
 
+// Box returns logical paragraph geometry by value.
 func (v *VList) Box() Box                   { return v.box }
+// Lines returns a detached placement slice in frozen line order.
 func (v *VList) Lines() []Line              { return slices.Clone(v.lines) }
+// Materials returns a detached slice of placed line boxes and fixed kerns.
 func (v *VList) Materials() []Material      { return slices.Clone(v.material) }
+// Frozen returns the retained read-only content, sharing its stable font services.
 func (v *VList) Frozen() *khipu.FrozenKhipu { return v.frozen }
 
 // Assemble measures contract metrics and places frozen lines once, without
@@ -64,8 +71,8 @@ func (v *VList) Frozen() *khipu.FrozenKhipu { return v.frozen }
 // saturation or narrowing to integer dimensions is performed. Ink overflow is intentionally not measured here.
 // Cancellation is checked between lines/knots; font query calls are synchronous.
 // A zero-line frozen result is an empty box; nil input is an error.
-// This frozen-only entry supports ProofCompatibility. CSSLineHeight uses Run,
-// which also retains prepared source styles while measuring surviving spaces.
+// This frozen-only entry supports ProofCompatibility. CSSLineHeight uses Run or
+// Prepared.Layout, which retain prepared source styles for surviving spaces.
 // Atom-containing input requires Prepared.Layout with border geometry; this
 // frozen-only entry rejects it instead of silently omitting vertical extents.
 func Assemble(ctx context.Context, frozen *khipu.FrozenKhipu, options Options) (*VList, error) {

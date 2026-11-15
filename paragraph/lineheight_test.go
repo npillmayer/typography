@@ -342,3 +342,49 @@ func (r fallbackMetricResolver) ResolveStyle(s styled.Style, d contracts.Resolve
 	}
 	return d, nil
 }
+
+// A taller run must receive the default line height in every uncovered portion
+// of its source range, even when overrides inside the same shaped word shrink it.
+func TestLineHeightOverrideGapsKeepDefaultContribution(t *testing.T) {
+	text := styled.TextFromString("abcd")
+	text, err := text.Style(sizeStyle{20 * dimen.BP, 17}, 0, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
+		for _, tc := range []struct {
+			name             string
+			ranges           [][2]uint64
+			height, baseline float64
+		}{
+			{"leading", [][2]uint64{{1, 4}}, 40, 26},
+			{"interior", [][2]uint64{{0, 1}, {2, 4}}, 40, 26},
+			{"trailing", [][2]uint64{{0, 3}}, 40, 26},
+			{"fully covered", [][2]uint64{{0, 2}, {2, 4}}, 20, 13},
+		} {
+			t.Run(string(b)+"/"+tc.name, func(t *testing.T) {
+				cfg := synthetic()
+				cfg.Streaming.Resolver = resolver{}
+				p := cssParams(b, factor(2))
+				p.Constraints.Width = 100 * dimen.BP
+				for _, r := range tc.ranges {
+					p.LineLayout.Runs = append(p.LineLayout.Runs, paragraph.LineHeightSpan{Start: r[0], End: r[1], Height: factor(0)})
+				}
+				out, err := paragraph.Run(t.Context(), paragraph.Input{Text: text}, p, cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				lines := out.VList.Lines()
+				if len(lines) != 1 || lines[0].Height != tc.height || lines[0].Baseline != tc.baseline || lines[0].Gap != 0 {
+					t.Fatalf("line geometry = %+v; want height %g, baseline %g, no gap", lines, tc.height, tc.baseline)
+				}
+				if box := out.VList.Box(); box.Extent != tc.height || box.Baseline != tc.baseline || !box.HasBaseline {
+					t.Fatalf("box geometry = %+v", box)
+				}
+				if material := out.VList.Materials(); len(material) != 1 || material[0].Kind != paragraph.LineBox || material[0].Extent != tc.height {
+					t.Fatalf("vertical material = %+v", material)
+				}
+			})
+		}
+	}
+}

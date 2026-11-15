@@ -18,6 +18,8 @@ type runStyle struct {
 	features           featureWindow // Enabled only for mixed-input itemization.
 }
 
+// Equals preserves private feature domains and the selected paint-boundary policy
+// while comparing the typography that determines a shaping run.
 func (s runStyle) Equals(other styled.Style) bool {
 	o, ok := other.(runStyle)
 	if !ok {
@@ -31,6 +33,8 @@ func (s runStyle) Equals(other styled.Style) bool {
 	}
 	return s.Input.domain == o.Input.domain && s.Plain == o.Plain && s.ResourceID == o.ResourceID && s.Script == o.Script && s.Input.Typography.EmSize == o.Input.Typography.EmSize && s.Input.Typography.Language == o.Input.Typography.Language && s.Input.Typography.WhiteSpace == o.Input.Typography.WhiteSpace && s.Input.Typography.Direction == o.Input.Typography.Direction && s.Input.Typography.UnicodeBidi == o.Input.Typography.UnicodeBidi
 }
+
+// String reports script, retained resource identity and projected input style.
 func (s runStyle) String() string { return fmt.Sprintf("%s %s %s", s.Script, s.ResourceID, s.Input) }
 
 // Itemize accepts complete spans in processed UTF-8 bytes; nil uses defaults.
@@ -92,6 +96,35 @@ type textItem struct {
 // object. Font coverage/fallback is the existing algorithm, not a new preflight.
 func (r *Resolver) itemizeSpans(ctx context.Context, text string, spans []itemizationSpan, plain, legacy bool) (styled.Text, []Binding, error) {
 	out := styled.TextFromString(text)
+	boundaries := itemizationBoundaries(text, spans)
+	var items []textItem
+	for _, span := range spans {
+		if err := ctx.Err(); err != nil {
+			return out, nil, err
+		}
+		if !boundaries[int(span.Start)] || !boundaries[int(span.End)] {
+			return out, nil, fmt.Errorf("style boundary splits a grapheme at [%d,%d)", span.Start, span.End)
+		}
+		local, err := r.itemizeSpan(ctx, text, span, plain, legacy)
+		if err != nil {
+			return out, nil, err
+		}
+		for _, it := range local {
+			n := len(items)
+			if n > 0 && items[n-1].end == it.start && items[n-1].style.Equals(it.style) {
+				items[n-1].end = it.end
+			} else {
+				items = append(items, it)
+			}
+		}
+	}
+	setFeatureWindows(text, items)
+	return r.applyTextItems(ctx, text, out, items)
+}
+
+// itemizationBoundaries finds grapheme boundaries across contiguous text spans.
+// Gaps are attached objects; style changes alone do not create boundaries.
+func itemizationBoundaries(text string, spans []itemizationSpan) map[int]bool {
 	boundaries := map[int]bool{0: true}
 	// Analyze each contiguous text island together, including style boundaries.
 	// Only an attached object may force a grapheme boundary; a style change may
@@ -111,125 +144,151 @@ func (r *Resolver) itemizeSpans(ctx context.Context, text string, spans []itemiz
 		}
 		i = j
 	}
-	var items []textItem
-	for _, span := range spans {
+	return boundaries
+}
+
+// itemizeSpan selects whole-grapheme faces before inheriting script and soft-hyphen
+// context within this projected span. Private style/feature domains stay intact.
+func (r *Resolver) itemizeSpan(ctx context.Context, text string, span itemizationSpan, plain, legacy bool) ([]textItem, error) {
+	var css styled.Style
+	if !plain {
+		css = span.Style
+	}
+	_, err := r.ResolveStyle(css, r.Defaults())
+	if err != nil {
+		return nil, err
+	}
+	primary := r.defaultID
+	if !plain {
+		primary = r.styleID(span.Style.Typography)
+	}
+	var local []textItem
+	clusters := uniseg.NewGraphemes(text[span.Start:span.End])
+	for clusters.Next() {
 		if err := ctx.Err(); err != nil {
-			return out, nil, err
+			return nil, err
 		}
-		if !boundaries[int(span.Start)] || !boundaries[int(span.End)] {
-			return out, nil, fmt.Errorf("style boundary splits a grapheme at [%d,%d)", span.Start, span.End)
-		}
-		var css styled.Style
-		if !plain {
-			css = span.Style
-		}
-		_, err := r.ResolveStyle(css, r.Defaults())
+		a, b := clusters.Positions()
+		start, end := span.Start+uint64(a), span.Start+uint64(b)
+		chunk := clusters.Str()
+		script, err := graphemeScript(chunk, start, end)
 		if err != nil {
-			return out, nil, err
+			return nil, err
 		}
-		primary := r.defaultID
-		if !plain {
-			primary = r.styleID(span.Style.Typography)
-		}
-		var local []textItem
-		clusters := uniseg.NewGraphemes(text[span.Start:span.End])
-		for clusters.Next() {
-			if err := ctx.Err(); err != nil {
-				return out, nil, err
-			}
-			a, b := clusters.Positions()
-			chunk := clusters.Str()
-			script := ""
-			for _, c := range chunk {
-				switch {
-				case unicode.Is(unicode.Latin, c):
-					script = "Latn"
-				case unicode.Is(unicode.Hebrew, c):
-					script = "Hebr"
-				case unicode.IsLetter(c) && !unicode.Is(unicode.Common, c) && !unicode.Is(unicode.Inherited, c):
-					return out, nil, fmt.Errorf("unsupported script for %U at UTF-8 bytes [%d,%d)", c, span.Start+uint64(a), span.Start+uint64(b))
-				}
-			}
-			// A soft hyphen has no nominal glyph in the unbroken word. Do not
-			// let vacuous coverage select the primary face and split a word
-			// already using fallback. Resolve its face after adjacent text.
-			if chunk == "\u00ad" {
-				local = append(local, textItem{span.Start + uint64(a), span.Start + uint64(b), runStyle{Legacy: legacy, Input: span.Style, Plain: plain, Script: script, features: span.features}})
-				continue
-			}
-			chosen := ""
-			var missing rune
-			candidates := append([]string{primary}, r.fallbackIDs...)
-			for _, path := range candidates {
-				covered := true
-				for _, c := range chunk {
-					if coverageExempt(c) {
-						continue
-					}
-					gid, err := r.services.Coverage.GlyphIndex(r.faces[path].Face, c)
-					if err != nil {
-						return out, nil, fmt.Errorf("font %q cmap: %w", path, err)
-					}
-					if gid == 0 {
-						missing = c
-						covered = false
-						break
-					}
-				}
-				if covered {
-					chosen = path
-					break
-				}
-			}
-			if chosen == "" {
-				return out, nil, fmt.Errorf("missing glyph %U at UTF-8 bytes [%d,%d): no configured face covers grapheme %q (tried %q)", missing, span.Start+uint64(a), span.Start+uint64(b), chunk, candidates)
-			}
-			local = append(local, textItem{span.Start + uint64(a), span.Start + uint64(b), runStyle{Legacy: legacy, Input: span.Style, Plain: plain, ResourceID: chosen, Script: script, features: span.features}})
-		}
-		previous := ""
-		for i := range local {
-			if local[i].style.Script != "" {
-				previous = local[i].style.Script
-			} else if previous != "" {
-				local[i].style.Script = previous
+		// A soft hyphen has no nominal glyph in the unbroken word. Defer its
+		// face so vacuous coverage cannot split text already using fallback.
+		chosen := ""
+		if chunk != "\u00ad" {
+			chosen, err = r.graphemeFace(chunk, primary, start, end)
+			if err != nil {
+				return nil, err
 			}
 		}
-		next := "Latn"
-		for i := len(local) - 1; i >= 0; i-- {
-			if local[i].style.Script != "" {
-				next = local[i].style.Script
-			} else {
-				local[i].style.Script = next
-			}
-		}
-		// Use logical neighbors, just as for script inheritance. Never cross
-		// an original CSS span or replace a real text item's selected face.
-		previousFace := ""
-		for i := range local {
-			if local[i].style.ResourceID != "" {
-				previousFace = local[i].style.ResourceID
-			} else if previousFace != "" {
-				local[i].style.ResourceID = previousFace
-			}
-		}
-		nextFace := primary
-		for i := len(local) - 1; i >= 0; i-- {
-			if local[i].style.ResourceID != "" {
-				nextFace = local[i].style.ResourceID
-			} else {
-				local[i].style.ResourceID = nextFace
-			}
-		}
-		for _, it := range local {
-			n := len(items)
-			if n > 0 && items[n-1].end == it.start && items[n-1].style.Equals(it.style) {
-				items[n-1].end = it.end
-			} else {
-				items = append(items, it)
-			}
+		local = append(local, textItem{start, end, runStyle{Legacy: legacy, Input: span.Style, Plain: plain, ResourceID: chosen, Script: script, features: span.features}})
+	}
+	inheritItemScripts(local)
+	inheritSoftHyphenFaces(local, primary)
+	return local, nil
+}
+
+// graphemeScript preserves scalar scan order and rejects unsupported strong
+// scripts before any coverage query for this grapheme. Ranges are original bytes.
+func graphemeScript(chunk string, start, end uint64) (string, error) {
+	script := ""
+	for _, c := range chunk {
+		switch {
+		case unicode.Is(unicode.Latin, c):
+			script = "Latn"
+		case unicode.Is(unicode.Hebrew, c):
+			script = "Hebr"
+		case unicode.IsLetter(c) && !unicode.Is(unicode.Common, c) && !unicode.Is(unicode.Inherited, c):
+			return "", fmt.Errorf("unsupported script for %U at UTF-8 bytes [%d,%d)", c, start, end)
 		}
 	}
-	setFeatureWindows(text, items)
+	return script, nil
+}
+
+// graphemeFace tries the primary then configured fallbacks in order, requiring
+// one face to cover the entire grapheme. Cmap errors terminate selection.
+func (r *Resolver) graphemeFace(chunk, primary string, start, end uint64) (string, error) {
+	chosen := ""
+	var missing rune
+	candidates := append([]string{primary}, r.fallbackIDs...)
+	for _, path := range candidates {
+		covered := true
+		for _, c := range chunk {
+			if coverageExempt(c) {
+				continue
+			}
+			gid, err := r.services.Coverage.GlyphIndex(r.faces[path].Face, c)
+			if err != nil {
+				return "", fmt.Errorf("font %q cmap: %w", path, err)
+			}
+			if gid == 0 {
+				missing = c
+				covered = false
+				break
+			}
+		}
+		if covered {
+			chosen = path
+			break
+		}
+	}
+	if chosen == "" {
+		return "", fmt.Errorf("missing glyph %U at UTF-8 bytes [%d,%d): no configured face covers grapheme %q (tried %q)", missing, start, end, chunk, candidates)
+	}
+	return chosen, nil
+}
+
+// inheritItemScripts prefers preceding strong text, then following text, with
+// Latin as the default. Call only with items from a single projected text span.
+func inheritItemScripts(local []textItem) {
+	previous := ""
+	for i := range local {
+		if local[i].style.Script != "" {
+			previous = local[i].style.Script
+		} else if previous != "" {
+			local[i].style.Script = previous
+		}
+	}
+	next := "Latn"
+	for i := len(local) - 1; i >= 0; i-- {
+		if local[i].style.Script != "" {
+			next = local[i].style.Script
+		} else {
+			local[i].style.Script = next
+		}
+	}
+}
+
+// inheritSoftHyphenFaces fills only deferred soft-hyphen faces within one span.
+// Marker-only spans use their mapped primary face.
+func inheritSoftHyphenFaces(local []textItem, primary string) {
+	// Use logical neighbors, just as for script inheritance. Never cross
+	// an original CSS span or replace a real text item's selected face.
+	previousFace := ""
+	for i := range local {
+		if local[i].style.ResourceID != "" {
+			previousFace = local[i].style.ResourceID
+		} else if previousFace != "" {
+			local[i].style.ResourceID = previousFace
+		}
+	}
+	nextFace := primary
+	for i := len(local) - 1; i >= 0; i-- {
+		if local[i].style.ResourceID != "" {
+			nextFace = local[i].style.ResourceID
+		} else {
+			local[i].style.ResourceID = nextFace
+		}
+	}
+}
+
+// applyTextItems styles the coalesced ranges and emits detached font bindings.
+// Feature windows must already be finalized. Preserve the text-only error return
+// behavior; ItemizeInline separately suppresses partial output on every failure.
+func (r *Resolver) applyTextItems(ctx context.Context, text string, out styled.Text, items []textItem) (styled.Text, []Binding, error) {
 	var bindings []Binding
 	for _, it := range items {
 		if err := ctx.Err(); err != nil {

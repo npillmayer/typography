@@ -21,6 +21,9 @@ type Match struct {
 	Exact  bool
 	Reason string
 }
+// OfflineProvider supplies a named, trusted offline lookup. Find must honor
+// cancellation and be concurrency-safe. It must attest exact matches through Match;
+// a nil error alone is insufficient. Names must be nonempty and unique.
 type OfflineProvider struct {
 	Name string
 	Find func(context.Context, fontfind.Descriptor) (Match, error)
@@ -30,12 +33,17 @@ type OfflineProvider struct {
 // an accidental success. Discovery caches complete immutable resolution evidence.
 type noFallbackRegistry struct{ *fontregistry.Registry }
 
+// FallbackFont rejects implicit packaged fallback at the provider boundary.
 func (noFallbackRegistry) FallbackFont() (fontfind.ScalableFont, error) {
 	return fontfind.NullFont, fmt.Errorf("implicit fallback disabled")
 }
 
+// Searcher adapts an ordered, fixed provider list to discovery.Searcher.
+// Each search owns a private registry with implicit fallback disabled.
 type Searcher struct{ providers []OfflineProvider }
 
+// New copies the provider list, rejecting empty/duplicate names and nil Find
+// functions. Provider closures remain shared; no loader or default provider is added.
 func New(providers []OfflineProvider) (*Searcher, error) {
 	seen := map[string]bool{}
 	for _, p := range providers {
@@ -46,6 +54,7 @@ func New(providers []OfflineProvider) (*Searcher, error) {
 	}
 	return &Searcher{providers: append([]OfflineProvider(nil), providers...)}, nil
 }
+// Names returns a detached list in provider search order.
 func (s *Searcher) Names() []string {
 	var out []string
 	for _, p := range s.providers {
@@ -53,9 +62,13 @@ func (s *Searcher) Names() []string {
 	}
 	return out
 }
+// Descriptor converts neutral legacy request codes to provider enum values.
+// It does not validate codes or convert numeric CSS weights.
 func Descriptor(r fontresource.Request) fontfind.Descriptor {
 	return fontfind.Descriptor{Pattern: r.Pattern, Style: font.Style(r.Style), Weight: font.Weight(r.Weight)}
 }
+// Request converts provider enums to neutral legacy identity codes.
+// It does not validate the descriptor or produce numeric CSS weights.
 func Request(d fontfind.Descriptor) fontresource.Request {
 	return fontresource.Request{Pattern: d.Pattern, Style: fontresource.Slant(d.Style), Weight: fontresource.Weight(d.Weight)}
 }
@@ -69,6 +82,11 @@ func ReadResource(sf fontfind.ScalableFont, provider string, request fontresourc
 	}
 	return fontresource.Read(bytes.NewReader(data), fontresource.Origin{Provider: provider, Name: sf.Name, Location: sf.Path(), Request: request})
 }
+// Search tries providers in order using mapped for lookup and original for
+// diagnostics/provenance. Unattested or error-bearing matches require allow=true.
+// Returned evidence belongs to this call and resource bytes are snapshotted; read
+// failures are terminal. Context cancellation is preserved. No implicit fallback
+// or session cache is installed here; discovery owns session policy and caching.
 func (s *Searcher) Search(ctx context.Context, mapped, original fontresource.Request, allow bool) (discovery.SearchResult, error) {
 	if ctx == nil {
 		return discovery.SearchResult{}, fmt.Errorf("nil context")
