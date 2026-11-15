@@ -1,6 +1,7 @@
 # adapter/fontfind
 
-Adapter from trusted offline fontfind providers to neutral discovery requests.
+This package provides an adapter for package `github.com/pillmayer/fontfind`.
+It makes it accessible for neutral  discovery requests.
 It owns enum conversion, a private resolver pipeline and immutable snapshots;
 `discovery` owns session policy/cache and requires a separately injected loader.
 

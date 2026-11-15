@@ -1,6 +1,7 @@
 # adapter/opentype
 
-Explicit OpenType implementation of khipu and typography service contracts.
+This package exposes implementation of `khipu` and `typography` service contracts.
+It does this with OpenType fonts, based on package `github.com/pillmayer/opentype`.
 It owns normal parsing, retained bytes, nominal coverage, metrics/scales,
 streaming shaping, identity and outline conversion. No public parsed-font accessor
 or implicit system/network discovery is provided.
