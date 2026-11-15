@@ -1,0 +1,92 @@
+package opentype
+
+import (
+	"slices"
+	"testing"
+
+	"github.com/npillmayer/cords/styled"
+	"github.com/npillmayer/khipu"
+	"github.com/npillmayer/khipu/contracts"
+	"github.com/npillmayer/khipu/dimen"
+	"github.com/npillmayer/khipu/linebreak"
+	"github.com/npillmayer/khipu/linebreak/firstfit"
+	"github.com/npillmayer/khipu/linebreak/knuthplass"
+	"github.com/npillmayer/typography"
+	"github.com/npillmayer/typography/style"
+	"github.com/npillmayer/uax/bidi"
+)
+
+func TestItemizeInlineFeatureLigatureAndSourceCoordinates(t *testing.T) {
+	r, err := typography.LoadSettings(t.Context(), typography.Settings{DefaultPath: progressFont, Size: 12 * dimen.BP}, typography.Services{Loader: Services{}, Coverage: Services{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The test font's "test" feature forms fi. Only the second pair falls in
+	// [3,5): the object occupies scalar 2 even though it is never shaped.
+	defaults := r.Defaults()
+	defaults.Features = []contracts.ShapeFeature{{Tag: [4]byte{'t', 'e', 's', 't'}, Enabled: true, Start: 3, End: 5}}
+	anchors := []contracts.AtomicAnchor{{ID: 13, ByteOffset: 2}}
+	for _, policy := range []typography.PaintPolicy{typography.GlyphBoundary, typography.LegacyStyleBoundary} {
+		for _, explicit := range []bool{false, true} {
+			var spans []style.Span
+			if explicit {
+				spans = []style.Span{{Start: 0, End: 7, Style: style.Style{EmSize: defaults.EmSize, Language: "en"}}}
+			}
+			text, _, err := r.ItemizeInline(t.Context(), "fi\uFFFCfi", spans, anchors, policy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			para, err := styled.ParagraphFromText(&text, 0, text.Raw().Len(), bidi.LeftToRight, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			owner := khipu.NewKhipukamayuq(khipu.Config{Streaming: &khipu.StreamingConfig{Resolver: r, Defaults: defaults, NewShaper: func() (contracts.StreamingShaper, error) { return NewStream(8) }}})
+			prepared, err := owner.PrepareParagraph(t.Context(), khipu.ParagraphInput{Paragraph: para, Atomics: anchors}, khipu.PrepareOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, engine := range []string{"firstfit", "knuthplass"} {
+				knots, err := owner.BindParagraph(t.Context(), prepared, []khipu.AtomicAdvance{{ID: 13, Advance: 4 * dimen.BP}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				layout := firstfit.DefaultLayout(linebreak.RectangularParShape(100 * dimen.BP))
+				var breaks []int
+				if engine == "firstfit" {
+					breaks, err = firstfit.BreakParagraph(knots, layout, nil)
+				} else {
+					breaks, err = knuthplass.BreakParagraph(knots, layout, nil)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				frozen, err := owner.Freeze(t.Context(), knots, breaks, layout)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var ids, clusters []uint32
+				objects := 0
+				for i := 0; i < frozen.KnotCount(); i++ {
+					if id, ok := frozen.Atomic(i); ok {
+						objects++
+						knot, _ := frozen.Knot(i)
+						if id != 13 || knot.Source.Bytes != (khipu.ByteRange{Start: 2, End: 5}) || knot.Source.ScalarStart != 2 {
+							t.Fatal("object coordinates changed", id, knot)
+						}
+					}
+					if tx, ok := frozen.CopyText(i); ok {
+						for _, g := range tx.Glyphs {
+							ids, clusters = append(ids, g.GlyphID), append(clusters, g.Cluster)
+						}
+					}
+				}
+				if objects != 1 || !slices.Equal(ids, []uint32{4, 5, 6}) || !slices.Equal(clusters, []uint32{0, 1, 3}) {
+					t.Fatalf("%s %s explicit=%v: objects=%d glyphs=%v clusters=%v", policy, engine, explicit, objects, ids, clusters)
+				}
+			}
+		}
+	}
+	if defaults.Features[0].Start != 3 || defaults.Features[0].End != 5 {
+		t.Fatal("feature defaults mutated")
+	}
+}

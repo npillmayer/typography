@@ -39,8 +39,9 @@ type LineHeight struct {
 
 // LineHeightSpan overrides Default on a nonempty half-open UTF-8 byte range.
 // Ranges are ordered and nonoverlapping; gaps inherit Default. These boundaries
-// affect only line boxes, never shaping. All intersecting ranges contribute even
-// if their boundary falls within a ligature or combining sequence.
+// affect only text line boxes, never shaping. All intersecting text ranges
+// contribute even if their boundary falls within a ligature or combining
+// sequence. Atomic markers use box geometry instead of text half-leading.
 type LineHeightSpan struct {
 	Start, End uint64
 	Height     LineHeight
@@ -50,8 +51,10 @@ type LineHeightSpan struct {
 // typography styles. The paragraph strut uses Streaming.Defaults.Font/EmSize.
 // Run contributions use retained shaping metrics, including fallback faces;
 // surviving spaces use resolved source styles. Discarded spaces do not contribute.
-// Baseline alignment only; no vertical-align, block padding/margins or packing.
-// Callers keep these values stable until Run returns; results retain only geometry.
+// Text uses baseline alignment; Prepared.Layout adds bottom-margin-edge atomic
+// alignment. CSS edge computation and height-constrained packing are external.
+// Keep these values stable during Run/Layout; each call copies the range slice,
+// and results retain only geometry.
 type LineLayout struct {
 	Default LineHeight
 	Runs    []LineHeightSpan `json:",omitempty"`
@@ -167,12 +170,23 @@ type metricRun struct {
 
 // Source styles are consulted only for surviving non-text material (spaces).
 // Actual glyphs always use their frozen font and scale, including replacements.
-func sourceMetrics(ctx context.Context, text styled.Text, cfg khipu.Config) ([]metricRun, error) {
+func sourceMetrics(ctx context.Context, text styled.Text, cfg khipu.Config, excluded []khipu.ByteRange) ([]metricRun, error) {
 	var runs []metricRun
+	object := 0
 	for run := range text.StyleRanges() {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		for object < len(excluded) && excluded[object].End <= run.Position {
+			object++
+		}
+		end := run.Position
+		for j := object; j < len(excluded) && excluded[j].Start <= end; j++ {
+			end = max(end, excluded[j].End)
+		}
+		if end >= run.Position+run.Length {
+			continue
+		} // Entirely attached markers.
 		s, err := cfg.Streaming.Resolver.ResolveStyle(run.Style, cfg.Streaming.Defaults)
 		if err != nil {
 			return nil, err
@@ -186,7 +200,7 @@ func sourceMetrics(ctx context.Context, text styled.Text, cfg khipu.Config) ([]m
 	return runs, nil
 }
 
-func assembleLineHeight(ctx context.Context, f *khipu.FrozenKhipu, l *LineLayout, text styled.Text, cfg khipu.Config) (*VList, error) {
+func assembleLineHeight(ctx context.Context, f *khipu.FrozenKhipu, l *LineLayout, text styled.Text, cfg khipu.Config, atomics map[contracts.AtomicID]AtomicBox) (*VList, error) {
 	strut, err := cssFaceMetrics(cfg.Streaming.Defaults)
 	if err != nil {
 		return nil, err
@@ -195,7 +209,18 @@ func assembleLineHeight(ctx context.Context, f *khipu.FrozenKhipu, l *LineLayout
 	if err != nil {
 		return nil, err
 	}
-	runs, err := sourceMetrics(ctx, text, cfg)
+	var excluded []khipu.ByteRange
+	for i := 0; i < f.KnotCount(); i++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if _, ok := f.Atomic(i); ok {
+			knot, _ := f.Knot(i)
+			excluded = append(excluded, knot.Source.Bytes)
+		}
+	}
+	sort.Slice(excluded, func(i, j int) bool { return excluded[i].Start < excluded[j].Start })
+	runs, err := sourceMetrics(ctx, text, cfg, excluded)
 	if err != nil {
 		return nil, err
 	}
@@ -240,6 +265,15 @@ func assembleLineHeight(ctx context.Context, f *khipu.FrozenKhipu, l *LineLayout
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
+			if id, ok := f.Atomic(k); ok {
+				box, exists := atomics[id]
+				if !exists {
+					return nil, fmt.Errorf("%w: missing atomic box", contracts.ErrIllegalArguments)
+				}
+				a = math.Max(a, float64(box.above())/float64(dimen.BP))
+				d = math.Max(d, 0)
+				continue
+			}
 			knot, _ := f.Knot(k)
 			src := knot.Source.Bytes
 			if src.End <= src.Start {
@@ -273,7 +307,7 @@ func assembleLineHeight(ctx context.Context, f *khipu.FrozenKhipu, l *LineLayout
 		end := top + height
 		width := math.Max(line.Width.Points(), line.TargetWidth.Points())
 		if !dimension(height) || !dimension(end) || !dimension(math.Abs(baseline)) || !dimension(width) || line.Width < 0 || line.TargetWidth < 0 {
-			return nil, fmt.Errorf("line-height line %d: geometry outside finite dimension range", i)
+			return nil, fmt.Errorf("%w: line-height line %d: geometry outside finite dimension range", contracts.ErrIllegalArguments, i)
 		}
 		v.lines = append(v.lines, Line{Index: i, Top: top, Baseline: baseline, Ascent: a, Descent: d, Height: height, Horizontal: line})
 		v.material = append(v.material, Material{Kind: LineBox, Child: i, Top: top, Extent: height})

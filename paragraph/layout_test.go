@@ -179,7 +179,7 @@ func TestRunValidationCancellationAndServiceErrors(t *testing.T) {
 	cancel()
 	check(ctx, input, p, synthetic(), paragraph.StageInput, context.Canceled)
 	for _, change := range []func(*paragraph.Input, *paragraph.Params){
-		func(_ *paragraph.Input, p *paragraph.Params) { p.Constraints.Width = 0 },
+		func(_ *paragraph.Input, p *paragraph.Params) { p.Constraints.Width = -1 },
 		func(_ *paragraph.Input, p *paragraph.Params) { p.Breaker = "unknown" },
 		func(_ *paragraph.Input, p *paragraph.Params) { p.Assembly = paragraph.Options{} },
 		func(i *paragraph.Input, _ *paragraph.Params) { i.Direction = bidi.Direction(99) },

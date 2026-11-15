@@ -172,6 +172,12 @@ func (r *Resolver) ResolveStyle(value styled.Style, defaults contracts.ResolvedR
 		}
 		result.Font = entry.Face
 		result.Script = language.MustParseScript(item.Script)
+		if item.features.active {
+			result.Features, err = item.features.intersect(result.Features)
+			if err != nil {
+				return result, err
+			}
+		}
 		return result, nil
 	}
 	result := defaults

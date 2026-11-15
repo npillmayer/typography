@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/npillmayer/khipu"
+	"github.com/npillmayer/khipu/contracts"
 	"github.com/npillmayer/khipu/dimen"
 )
 
@@ -45,7 +46,11 @@ type VList struct {
 	lines    []Line
 	material []Material
 	frozen   *khipu.FrozenKhipu
+	atomics  []AtomicPlacement
 }
+
+// AtomicPlacements returns detached border origins in line/frozen-knot order.
+func (v *VList) AtomicPlacements() []AtomicPlacement { return slices.Clone(v.atomics) }
 
 func (v *VList) Box() Box                   { return v.box }
 func (v *VList) Lines() []Line              { return slices.Clone(v.lines) }
@@ -61,6 +66,8 @@ func (v *VList) Frozen() *khipu.FrozenKhipu { return v.frozen }
 // A zero-line frozen result is an empty box; nil input is an error.
 // This frozen-only entry supports ProofCompatibility. CSSLineHeight uses Run,
 // which also retains prepared source styles while measuring surviving spaces.
+// Atom-containing input requires Prepared.Layout with border geometry; this
+// frozen-only entry rejects it instead of silently omitting vertical extents.
 func Assemble(ctx context.Context, frozen *khipu.FrozenKhipu, options Options) (*VList, error) {
 	if ctx == nil || frozen == nil {
 		return nil, fmt.Errorf("paragraph assembly requires context and frozen content")
@@ -71,6 +78,18 @@ func Assemble(ctx context.Context, frozen *khipu.FrozenKhipu, options Options) (
 	if err := validateOptions(options); err != nil {
 		return nil, err
 	}
+	for i := 0; i < frozen.KnotCount(); i++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if _, ok := frozen.Atomic(i); ok {
+			return nil, fmt.Errorf("%w: atomic assembly requires border geometry", khipu.ErrUnsupportedPolicy)
+		}
+	}
+	return assembleCompatibility(ctx, frozen, options, nil)
+}
+
+func assembleCompatibility(ctx context.Context, frozen *khipu.FrozenKhipu, options Options, atomics map[contracts.AtomicID]AtomicBox) (*VList, error) {
 	v := &VList{frozen: frozen}
 	top := 0.0
 	for i := 0; i < frozen.LineCount(); i++ {
@@ -79,9 +98,19 @@ func Assemble(ctx context.Context, frozen *khipu.FrozenKhipu, options Options) (
 		}
 		horizontal, _ := frozen.Line(i)
 		ascent, descent, gap := 0.0, 0.0, 0.0
+		atomicAbove, hasAtomic := math.Inf(-1), false
 		for k := horizontal.FirstKnot; k < horizontal.FirstKnot+horizontal.KnotCount; k++ {
 			if err := ctx.Err(); err != nil {
 				return nil, err
+			}
+			if id, ok := frozen.Atomic(k); ok {
+				box, exists := atomics[id]
+				if !exists {
+					return nil, fmt.Errorf("%w: missing atomic box", contracts.ErrIllegalArguments)
+				}
+				atomicAbove = math.Max(atomicAbove, float64(box.above())/float64(dimen.BP))
+				hasAtomic = true
+				continue
 			}
 			text, ok := frozen.CopyText(k)
 			if !ok {
@@ -100,12 +129,17 @@ func Assemble(ctx context.Context, frozen *khipu.FrozenKhipu, options Options) (
 			descent = options.DefaultEmSize.Points() * .2
 			gap = options.DefaultEmSize.Points() * .2
 		}
+		// Preserve compatibility's text metrics/fallback, then combine signed
+		// atomic contributions. Objects receive no text leading or font gap.
+		if hasAtomic {
+			ascent, descent = math.Max(ascent, atomicAbove), math.Max(descent, 0)
+		}
 		baseline := top + ascent
 		height := ascent + descent + gap
 		end := top + height
 		width := math.Max(horizontal.Width.Points(), horizontal.TargetWidth.Points())
 		if !dimension(end) || !dimension(baseline) || !dimension(width) || horizontal.Width < 0 || horizontal.TargetWidth < 0 {
-			return nil, fmt.Errorf("paragraph line %d: geometry outside finite dimension range", i)
+			return nil, fmt.Errorf("%w: paragraph line %d: geometry outside finite dimension range", contracts.ErrIllegalArguments, i)
 		}
 		v.lines = append(v.lines, Line{Index: i, Top: top, Baseline: baseline, Ascent: ascent, Descent: descent, Gap: gap, Height: height, Horizontal: horizontal})
 		v.material = append(v.material,
