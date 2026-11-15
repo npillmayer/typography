@@ -4,7 +4,6 @@ go 1.25.6
 
 require (
 	github.com/npillmayer/cords v0.1.2-alpha.3
-	github.com/npillmayer/fontfind v0.0.0
 	github.com/npillmayer/khipu v0.0.0
 	github.com/npillmayer/opentype v0.0.0
 	github.com/npillmayer/uax v0.3.0-alpha1
@@ -28,5 +27,3 @@ replace github.com/npillmayer/uax => ../uax
 replace github.com/npillmayer/schuko => ../schuko
 
 replace github.com/npillmayer/opentype => ../opentype
-
-replace github.com/npillmayer/fontfind => ../fontfind

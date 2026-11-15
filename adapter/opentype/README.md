@@ -1,16 +1,18 @@
 # adapter/opentype
 
 This package exposes implementation of `khipu` and `typography` service contracts.
-It does this with OpenType fonts, based on package `github.com/pillmayer/opentype`.
+It does this with OpenType fonts, based on package `github.com/npillmayer/opentype`.
 It owns normal parsing, retained bytes, nominal coverage, metrics/scales,
 streaming shaping, identity and outline conversion. No public parsed-font accessor
 or implicit system/network discovery is provided.
 
 ```go
 services := opentypeadapter.Services{}
-resolver, err := typography.LoadSettings(ctx, settings, typography.Services{
-    Loader: services, Coverage: services,
-})
+entry, err := services.Load(ctx, path, nil)
+if err != nil { return err }
+resolver, err := typography.NewResolver(ctx, typography.SelectedFonts{
+    Faces: []typography.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: size,
+}, services)
 // Handle err before using resolver; retain services/faces for result lifetimes.
 ```
 

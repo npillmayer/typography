@@ -220,7 +220,7 @@ func (r *Resolver) graphemeFace(chunk, primary string, start, end uint64) (strin
 			if coverageExempt(c) {
 				continue
 			}
-			gid, err := r.services.Coverage.GlyphIndex(r.faces[path].Face, c)
+			gid, err := r.coverage.GlyphIndex(r.faces[path].Face, c)
 			if err != nil {
 				return "", fmt.Errorf("font %q cmap: %w", path, err)
 			}

@@ -36,3 +36,18 @@ func TestExtractedPackageDependencyBoundaries(t *testing.T) {
 		}
 	}
 }
+
+// Even backend packages must leave discovery and application selection upstream.
+func TestModuleHasNoDiscoveryImports(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "go", "list", "-f", `{{.ImportPath}} {{join .Imports " "}}`, "./...").CombinedOutput()
+	if err != nil {
+		t.Fatalf("dependency inspection: %v: %s", err, out)
+	}
+	for _, blocked := range []string{"github.com/npillmayer/fontfind", "typography/discovery", "typography/adapter/fontfind", "tytui"} {
+		if strings.Contains(string(out), blocked) {
+			t.Fatalf("module acquired discovery import %s", blocked)
+		}
+	}
+}

@@ -12,7 +12,11 @@ import (
 )
 
 func TestPreparedInlineFeatureDomainsAndReusableLayout(t *testing.T) {
-	r, err := typography.LoadSettings(t.Context(), typography.Settings{DefaultPath: progressFont, Size: 12 * dimen.BP}, typography.Services{Loader: Services{}, Coverage: Services{}})
+	entry, err := (Services{}).Load(t.Context(), progressFont, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := typography.NewResolver(t.Context(), typography.SelectedFonts{Faces: []typography.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 12 * dimen.BP}, Services{})
 	if err != nil {
 		t.Fatal(err)
 	}

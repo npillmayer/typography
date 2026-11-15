@@ -37,7 +37,7 @@ func TestItemizeCoverageOrderAndErrors(t *testing.T) {
 				}
 				return f.GlyphIndex(face, c)
 			})
-			r, err := typography.LoadSettings(t.Context(), typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback", "unused"}}, svc)
+			r, err := loadResolver(t.Context(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback", "unused"}}, svc)
 			if err != nil {
 				t.Fatal(err)
 			}

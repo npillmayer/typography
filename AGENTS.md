@@ -21,19 +21,26 @@ in owning packages and verify compatibility through sibling tytui. Run ordinary
 and race suites, build and vet in both modules when changing these boundaries.
 Adapter tests use sibling opentype font fixtures. Do not commit or push for the user.
 
-Root typography requires injected FaceLoader/Coverage services, stores only
-contracts.FontFace with neutral identity/resource metadata, and imports neither
-adapter/opentype, fontfind, DOM nor tytui. There is no default backend constructor.
-Keep mapping, grapheme/script/fallback and snapshot policy here; test it with fake
-services. Tytui composes these services directly; versioned font wire DTOs stay in replay.
+Root typography accepts preloaded SelectedFonts and injected Coverage through
+NewResolver. It stores contracts.FontFace with neutral identity/resource metadata
+and imports neither adapter/opentype, fontfind, DOM nor tytui. No loading callback
+or default backend belongs here. Validate a closed entry table: one entry for each
+referenced resource ID, no duplicates/missing/unreferenced entries. Canonical
+snapshot/Info order is default, rules, fallbacks; retain role order and repeated
+fallback references. Copy metadata/warnings and share only stable faces/resources.
+Construction performs no I/O, parsing or coverage query. Keep mapping,
+grapheme/script/fallback and snapshot policy here; test it with fake preloaded
+faces. Tytui prepares fonts before layout; versioned wire DTOs stay in replay.
 ItemizeWithMetadata preserves original paint spans alongside coalesced shaping.
 Bidi context and original nonempty feature domains must remain intact.
 
-Neutral discovery owns request policy/cache/evidence and requires Searcher plus an
-injected loader. Adapter/fontfind owns provider enum/resource conversion and
-ResolverPipeline; no implicit fallback or system/network discovery. Keep provider
-and diagnostic ordering, exact-match attestations, explicit substitution and
-cancellation/cache ownership covered by owning tests.
+Application package tytui/fontselection owns request policy/cache/evidence,
+fontfind enum/resource conversion and controlled ResolverPipeline use. Typography
+has no discovery or adapter/fontfind package. No implicit fallback or system/network
+discovery is allowed. Keep provider/diagnostic ordering, exact-match attestations,
+explicit substitution, terminal read/parse errors and cancellation/cache ownership
+covered by application tests. The upstream read allocates before the resource bound;
+providers must remain trusted and offline.
 OpenType Services owns retained identity, outline-to-path conversion and VisualOrder.
 Generic proof consumers use IdentityProvider/render.Backend, never concrete faces.
 No backend services are serialized. Tytui's static pre-step-5 manifests protect
@@ -60,11 +67,16 @@ Result.PaintSpans returns a detached copy. ItemizeWithMetadata remains compatibl
 Projection does not change document equality or replay formats.
 
 Do not reintroduce tytui's removed fontbackend package or htmlinput style aliases.
-OpenType Services implements typography.FaceLoader and Coverage; type assertions
-stay inside the adapter. Do not reintroduce application face/resource wrappers.
-Discovery.Resolution carries application selection provenance, while the resolver's pinned
-Snapshot is typography.Settings. Font wire records/conversions live only in
-replay/wire.go; preserve numeric provenance codes and unchanged v1/v2 fixtures.
+OpenType Services.Load prepares FaceEntry values; Services implements Coverage.
+Concrete type assertions stay inside the adapter. Do not reintroduce application
+face/resource wrappers. Fontselection.Selection carries SelectedFonts and detached
+application Provenance; the resolver's Snapshot is *typography.SelectedFonts.
+Root path-bearing Settings/Rule, LoadSettings, FaceLoader/LoadFunc and the loader
+Services bundle are retired. Replay owns explicit input/policy/descriptor/font
+wire records; preserve numeric provenance codes, Fonts:null and unchanged v1/v2/v3
+fixtures. Load validates every stored font but only passes referenced faces to the
+resolver. Requested paths/descriptors are never executable on replay; retain the
+existing normalized requested-path resave behavior.
 Run the generic-package dependency audit and adapter service regressions alongside
 both modules' ordinary/race/build/vet checks. Keep annotation APIs outside this boundary.
 

@@ -30,7 +30,7 @@ func assertColorFree(t *testing.T, value any) {
 }
 
 func TestRenderingBypassProjectionAndLegacyDomains(t *testing.T) {
-	r := load(t, newServices(), typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP})
+	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP})
 	red := documentStyle()
 	blue := red
 	blue.Color = "blue"
@@ -80,7 +80,7 @@ func TestRenderingBypassProjectionAndLegacyDomains(t *testing.T) {
 }
 
 func TestRenderingBypassKeepsFeatureDomainsWithoutColor(t *testing.T) {
-	r := load(t, newServices(), typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP})
+	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP})
 	red := documentStyle()
 	blue := red
 	blue.Color = "blue"

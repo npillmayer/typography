@@ -48,7 +48,7 @@ func TestInjectedLoadingAndCoverageServices(t *testing.T) {
 	if _, err = s.Load(context.Background(), "", nil); err == nil {
 		t.Fatal("missing source")
 	}
-	r, err := typography.LoadSettings(context.Background(), typography.Settings{DefaultResource: entry.Resource, Size: 12 * dimen.BP}, typography.Services{Loader: s, Coverage: s})
+	r, err := typography.NewResolver(context.Background(), typography.SelectedFonts{Faces: []typography.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 12 * dimen.BP}, s)
 	if err != nil {
 		t.Fatal(err)
 	}

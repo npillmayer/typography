@@ -1,7 +1,7 @@
 # typography
 
 Typography is a Go library for turning styled text into laid-out paragraphs.
-It connects font selection and text preparation to khipu's shaping and
+It connects preselected fonts and text preparation to khipu's shaping and
 line-breaking machinery, then assembles the resulting lines into reusable
 paragraph geometry. Applications can use it to handle font fallback, mixed
 scripts, line spacing and fixed inline objects, measure paragraph widths, and
@@ -15,10 +15,6 @@ Paragraph typography integration with explicit services:
   pinned snapshots, IdentityProvider and FontSource.
 - [`style`](style/README.md): document values, UTF-8 spans and typography/paint projections.
 - [`fontresource`](fontresource/README.md): bounded immutable bytes and fixed version-1 content/provenance IDs.
-- [`discovery`](discovery/README.md): neutral CSS requests, explicit generic policy, ordered families,
-  session cache and detached resolution evidence; requires Searcher and FaceLoader.
-- [`adapter/fontfind`](adapter/fontfind/README.md): controlled providers, exact-match attestations, private
-  ResolverPipeline, enum conversion and resource snapshots; no default loader.
 - [`paragraph`](paragraph/README.md): reusable preparation, intrinsic measurement, breaking/freezing and
   natural vertical assembly for text and fixed atomic inline boxes.
 - [`render`](render/README.md): neutral retained-outline/visual-order services, paint-source mapping
@@ -26,13 +22,12 @@ Paragraph typography integration with explicit services:
 - [`adapter/opentype`](adapter/opentype/README.md): loader/face/scale/shaper, identity, retained outlines and
   generic VisualOrder implementation. No public parsed-font accessor.
 
-Root LoadSettings requires FaceLoader and Coverage; discovery.New requires explicit
-search/validation services. Neither installs a backend or imports an adapter.
-No implicit font substitution or system/network discovery is enabled. Read/parse
-failures terminate; successful cache hits retain diagnostic substitution evidence.
-Providers must be offline, concurrency-safe and honor cancellation. The fontfind
-ReadFontData allocation still precedes the snapshot size bound; only trusted
-providers belong in that adapter. Services remain valid for the result lifetime.
+Root `NewResolver` accepts already loaded `FaceEntry` values, explicit default,
+style-rule and fallback references, and an injected `Coverage` service. It does
+no loading, parsing or discovery. Applications select and load fonts before
+entering the engine; tytui owns its policy, providers and cache in `fontselection`.
+Only explicitly configured fallback references may be tried. Faces and coverage
+services remain valid for the result lifetime.
 
 Resources expose independent readers, never mutable bytes. Snapshot pins every
 configured resource without invoking discovery or reopening paths. Resource request
@@ -50,9 +45,9 @@ is available explicitly for old replay; document Style.Equals remains complete.
 render.PaintSources maps frozen anchors and the supported explicit-soft-hyphen
 replacements to original bytes, rejecting unknown generated transformations.
 
-Development uses sibling cords, khipu, uax, schuko, opentype and fontfind checkouts.
-Neutral tests use fake services; adapter tests use controlled providers and sibling
-opentype font fixtures. Run `go test ./...`, `go test -race ./...`, `go build ./...`
+Development uses sibling cords, khipu, uax, schuko and opentype checkouts.
+Neutral tests use fake preloaded faces; adapter tests use sibling OpenType font
+fixtures. Tytui additionally needs fontfind for its application selection tests. Run `go test ./...`, `go test -race ./...`, `go build ./...`
 and `go vet ./...`, then tytui suites including static pre-migration replay fixtures.
 
 Tytui replay defaults to version 2 for glyph-boundary compatibility layouts;
@@ -95,8 +90,8 @@ modified; errors return no partial itemization (invalid UTF-8 returns empty text
 
 Glyph coverage is the caller's responsibility. This API adds no coverage pass;
 ordinary text still uses the existing itemizer checks and fallback behavior while
-attached markers bypass them. Removing those checks and moving font preparation
-elsewhere is a separate future task. Atomic-aware paragraph orchestration and
+attached markers bypass them. Removing those coverage checks would be a separate behavior change; font
+selection/loading already happens before resolver construction. Atomic-aware paragraph orchestration and
 vertical assembly are available through `paragraph.Prepare` and `Prepared.Layout`.
 
 ## Service composition
@@ -105,22 +100,40 @@ Compose the OpenType implementation explicitly:
 
 ```go
 services := opentype.Services{}
-resolver, err := typography.LoadSettings(ctx, settings,
-    typography.Services{Loader: services, Coverage: services})
+entry, err := services.Load(ctx, path, nil) // Or (ctx, "", retainedResource).
+if err != nil { return err }
+resolver, err := typography.NewResolver(ctx, typography.SelectedFonts{
+    Faces: []typography.FaceEntry{entry},
+    Default: entry.Info.ResourceID,
+    Size: size,
+}, services)
+// Handle err before using resolver.
 ```
 
-Services implements FaceLoader, Coverage, IdentityProvider and render.Backend.
-Use adapter/opentype.NewStream for shaping. Discovery.New takes the same injected
-loader and a Searcher such as adapter/fontfind.New's controlled provider adapter.
-Application file selection can use discovery.Resolution{Settings: settings};
-descriptor resolution returns that same detached settings/provenance envelope.
-The resolver's Snapshot remains typography.Settings with pinned resources.
+`SelectedFonts` is a closed set, not a search catalog. Every default/rule/fallback
+reference is a resource ID. Include exactly one entry per referenced ID, even for
+unused rules; duplicates, missing references and unreferenced entries are errors.
+Rule and fallback order (including repeated references) is preserved. Table order
+has no selection meaning: `Infos` and `Snapshot` use default, rules, then fallbacks,
+deduplicated by resource ID. Metadata and warning slices are copied; opaque faces
+and immutable resources remain shared. Snapshot never reloads a font.
 
-General parser/stream/resource/discovery regressions, including feature-range
-and nonzero-cluster-base baselines, live here; tytui owns DOM-to-resolver, frozen
-glyph, TUI and replay integration tests. A dependency
-audit prevents generic packages from importing DOM, discovery or concrete adapters.
-The rendering bypass and legacy replay policies are unchanged.
+Services implements Coverage, IdentityProvider and render.Backend, and supplies
+`Load` as a direct application entry point. Use `adapter/opentype.NewStream` for
+shaping. Tytui callers prepare a `fontselection.Request` with `fontselection.Prepare`
+before passing its `Selection` to `pipeline.Run`. Its `Provenance` stays separate
+from executable references, and replay converts it through explicit wire records.
+
+This replaces root `LoadSettings`, `Settings`, `Rule`, `FaceLoader`, `LoadFunc`
+and the loader/coverage `Services` bundle. The old `discovery` and `adapter/fontfind`
+packages have moved to tytui. This is a Go source API change; replay versions
+1, 2 and 3, resource identities and static evidence remain unchanged.
+
+General parser/stream/resource/resolver regressions, including feature-range
+and nonzero-cluster-base baselines, live here. Tytui owns selection/provider,
+DOM-to-resolver, frozen-glyph, TUI and replay integration tests. Dependency audits
+keep generic packages free of concrete backends and all typography production
+packages free of fontfind and application selection imports.
 
 ## Paragraph assembly and text-only execution
 

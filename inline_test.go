@@ -24,7 +24,7 @@ import (
 
 func TestItemizeInlineObjectOnlyBypassesResolutionAndCoverage(t *testing.T) {
 	f := newServices()
-	r := load(t, f, typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP})
+	r := load(t, f, fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP})
 	f.coverageErr = errors.New("coverage must not be called")
 	s := documentStyle()
 	s.Language = "not a language!" // Resolving this style would fail.
@@ -66,7 +66,7 @@ func TestItemizeInlineMarkerBarriers(t *testing.T) {
 				queried = append(queried, c)
 				return f.GlyphIndex(face, c)
 			})
-			r, err := typography.LoadSettings(t.Context(), typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}}, svc)
+			r, err := loadResolver(t.Context(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}}, svc)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -98,7 +98,7 @@ func TestItemizeInlineMarkerBarriers(t *testing.T) {
 
 func TestItemizeInlinePaintAndLiteralMarker(t *testing.T) {
 	f := newServices()
-	r := load(t, f, typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP})
+	r := load(t, f, fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP})
 	a, b := documentStyle(), documentStyle()
 	b.Color = "blue"
 	object := a
@@ -130,7 +130,7 @@ func TestItemizeInlinePaintAndLiteralMarker(t *testing.T) {
 
 func TestItemizeInlineValidationAndCancellation(t *testing.T) {
 	f := newServices()
-	r := load(t, f, typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP})
+	r := load(t, f, fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP})
 	for _, anchors := range [][]contracts.AtomicAnchor{
 		{{ID: 0, ByteOffset: 2}}, {{ID: 1, ByteOffset: 2}, {ID: 1, ByteOffset: 5}}, {{ID: 1, ByteOffset: 5}, {ID: 2, ByteOffset: 2}},
 		{{ID: 1, ByteOffset: 2}, {ID: 2, ByteOffset: 2}}, {{ID: 1, ByteOffset: 0}}, {{ID: 1, ByteOffset: 1}}, {{ID: 1, ByteOffset: 3}}, {{ID: 1, ByteOffset: 8}}, {{ID: 1, ByteOffset: ^uint64(0)}},
@@ -173,7 +173,7 @@ func TestItemizeInlineValidationAndCancellation(t *testing.T) {
 	defer cancel()
 	svc := f.services()
 	svc.Coverage = typography.CoverageFunc(func(face contracts.FontFace, c rune) (uint32, error) { cancel(); return f.GlyphIndex(face, c) })
-	r, err := typography.LoadSettings(t.Context(), typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP}, svc)
+	r, err := loadResolver(t.Context(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP}, svc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestItemizeInlineValidationAndCancellation(t *testing.T) {
 
 func TestItemizeInlineFeatureDomains(t *testing.T) {
 	f := newServices()
-	r := load(t, f, typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}})
+	r := load(t, f, fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}})
 	text := "éa\uFFFCfiאב"
 	features := []contracts.ShapeFeature{
 		{Tag: [4]byte{'t', 'e', 's', 't'}, Start: 1, End: 6, Enabled: true},
@@ -251,7 +251,7 @@ func TestItemizeInlineFeatureDomains(t *testing.T) {
 }
 
 func TestItemizeInlineNonzeroFeatureOrigin(t *testing.T) {
-	r := load(t, newServices(), typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP})
+	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP})
 	a, b := documentStyle(), documentStyle()
 	b.EmSize *= 2
 	text := "xxfi\uFFFCfi"
@@ -278,7 +278,7 @@ func TestItemizeInlineNonzeroFeatureOrigin(t *testing.T) {
 }
 
 func TestItemizeInlinePaintFeatureDomains(t *testing.T) {
-	r := load(t, newServices(), typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP})
+	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP})
 	a, b := documentStyle(), documentStyle()
 	b.Color = "blue"
 	// The first source span contains fi and an object. GlyphBoundary coalesces
@@ -308,7 +308,7 @@ func TestItemizeInlinePaintFeatureDomains(t *testing.T) {
 }
 
 func TestItemizeInlineTextOnlyCompatibility(t *testing.T) {
-	r := load(t, newServices(), typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}})
+	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}})
 	for _, text := range []string{"", "fié\u00adאב"} {
 		for _, policy := range []typography.PaintPolicy{typography.GlyphBoundary, typography.LegacyStyleBoundary} {
 			want, wb, err := r.ItemizePolicy(t.Context(), text, nil, policy)
@@ -363,7 +363,7 @@ func (s *inlineRecordingStream) Shape(ctx context.Context, p contracts.ShapePara
 }
 
 func TestItemizeInlineKhipuCoordinatesAndFreeze(t *testing.T) {
-	r := load(t, newServices(), typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}})
+	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}})
 	text := "éa\uFFFCfiאב"
 	anchors := []contracts.AtomicAnchor{{ID: 7, ByteOffset: 3}}
 	out, _, err := r.ItemizeInline(t.Context(), text, nil, anchors, typography.GlyphBoundary)

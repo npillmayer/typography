@@ -50,5 +50,4 @@ func (Services) GlyphIndex(value contracts.FontFace, r rune) (uint32, error) {
 	return face.GlyphIndex(r)
 }
 
-var _ typography.FaceLoader = Services{}
 var _ typography.Coverage = Services{}

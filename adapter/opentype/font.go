@@ -28,6 +28,7 @@ type Face struct {
 	unitScale float64
 	outline   *sfnt.Font
 }
+
 // Info is detached identity and parser metadata for a retained OpenType face.
 type Info struct {
 	ResourceID                      string
@@ -40,7 +41,7 @@ type Info struct {
 func (f *Face) Info() Info { i := f.info; i.Warnings = append([]string(nil), i.Warnings...); return i }
 
 // Loader implements contracts.FontLoader using normal OpenType parsing and
-// bounded retained snapshots. Use Services for typography.FaceLoader injection.
+// bounded retained snapshots. Use Services.Load to prepare typography.FaceEntry selections.
 type Loader struct{}
 
 var _ contracts.FontLoader = Loader{}
@@ -96,6 +97,7 @@ func LoadResource(resource *fontresource.Resource) (*Face, error) {
 	}
 	return f, nil
 }
+
 // LoadFile snapshots a regular file with file-path provenance, closes the file
 // and applies normal parser policy. Subsequent operations use retained bytes.
 func LoadFile(path string) (*Face, error) {
@@ -139,6 +141,7 @@ type Scale float64
 
 // ToDU converts font units to fractional DU.
 func (s Scale) ToDU(units int32) float64 { return float64(s) * float64(units) }
+
 // Scale returns a font-unit-to-DU conversion for a positive size below dimen.Fil.
 // Nil or uninitialized faces and invalid sizes are rejected.
 func (f *Face) Scale(size dimen.DU) (contracts.FontScale, error) {
@@ -147,6 +150,7 @@ func (f *Face) Scale(size dimen.DU) (contracts.FontScale, error) {
 	}
 	return Scale(f.unitScale * float64(size)), nil
 }
+
 // GlyphIndex queries nominal cmap coverage under the shared face lock.
 // Zero means missing coverage. The receiver must be a loaded, nonnil face.
 func (f *Face) GlyphIndex(r rune) (uint32, error) {

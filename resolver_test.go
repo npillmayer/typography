@@ -55,15 +55,15 @@ func (f *fakeServices) GlyphIndex(face contracts.FontFace, c rune) (uint32, erro
 	}
 	return 0, nil
 }
-func (f *fakeServices) services() typography.Services {
-	return typography.Services{Loader: f, Coverage: f}
+func (f *fakeServices) services() testServices {
+	return testServices{Loader: f, Coverage: f}
 }
 func documentStyle() style.Style {
 	return style.Style{Family: "serif", EmSize: 18 * dimen.BP, Weight: 700, Slant: "normal", Color: "red", Language: "en", WhiteSpace: "normal", UnicodeBidi: "normal"}
 }
-func load(t *testing.T, f *fakeServices, s typography.Settings) *typography.Resolver {
+func load(t *testing.T, f *fakeServices, s fixtureSettings) *typography.Resolver {
 	t.Helper()
-	r, err := typography.LoadSettings(context.Background(), s, f.services())
+	r, err := loadResolver(context.Background(), s, f.services())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func load(t *testing.T, f *fakeServices, s typography.Settings) *typography.Reso
 
 func TestMappingAndSnapshotOwnership(t *testing.T) {
 	f := newServices()
-	s := typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP, Rules: []typography.Rule{{Family: "serif", Weight: 700, Path: "first"}, {Weight: 700, Path: "second"}}, Fallbacks: []string{"fallback"}}
+	s := fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Rules: []fixtureRule{{Family: "serif", Weight: 700, Path: "first"}, {Weight: 700, Path: "second"}}, Fallbacks: []string{"fallback"}}
 	r := load(t, f, s)
 	s.Rules[0].Path = "mutated"
 	s.Fallbacks[0] = "mutated"
@@ -106,14 +106,18 @@ func TestMappingAndSnapshotOwnership(t *testing.T) {
 	}
 	before := len(f.calls)
 	snap := r.Snapshot()
-	if len(f.calls) != before || snap.DefaultPath != "" || len(snap.Rules) != 2 || snap.Rules[1].Resource.Origin().Location != "second" || snap.Rules[1].Path != "" || len(snap.Fallbacks) != 0 || snap.FallbackResources[0].Origin().Location != "fallback" {
+	if len(f.calls) != before || len(snap.Faces) != 4 || len(snap.Rules) != 2 || snap.Rules[1].ResourceID != f.entries["second"].Info.ResourceID || snap.Fallbacks[0] != f.entries["fallback"].Info.ResourceID {
 		t.Fatalf("incomplete snapshot %+v", snap)
 	}
+
 	snap.Rules[0].Weight = 0
 	if r.Snapshot().Rules[0].Weight != 700 {
 		t.Fatal("snapshot aliases policy")
 	}
-	replay := load(t, newServices(), *r.Snapshot())
+	replay, err := typography.NewResolver(t.Context(), *r.Snapshot(), f)
+	if err != nil {
+		t.Fatal(err)
+	}
 	a, _ := r.CheckText(context.Background(), "éa", nil)
 	b, _ := replay.CheckText(context.Background(), "éa", nil)
 	if !reflect.DeepEqual(a, b) {
@@ -123,7 +127,7 @@ func TestMappingAndSnapshotOwnership(t *testing.T) {
 
 func TestGraphemesScriptsAndSoftHyphenContext(t *testing.T) {
 	f := newServices()
-	r := load(t, f, typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback", "unused"}})
+	r := load(t, f, fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback", "unused"}})
 	for _, text := range []string{"é\u00adé", "\u00adé", "é\u00ad\u00ad"} {
 		b, err := r.CheckText(context.Background(), text, nil)
 		if err != nil {
@@ -169,7 +173,7 @@ func TestGraphemesScriptsAndSoftHyphenContext(t *testing.T) {
 }
 
 func TestPaintProjectionMergesShapingOnly(t *testing.T) {
-	r := load(t, newServices(), typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP})
+	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP})
 	red := documentStyle()
 	blue := red
 	blue.Color = "blue"
@@ -195,60 +199,8 @@ func TestPaintProjectionMergesShapingOnly(t *testing.T) {
 	}
 }
 
-func TestInjectedServiceFailures(t *testing.T) {
-	ctx := context.Background()
-	f := newServices()
-	s := typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP}
-	for _, services := range []typography.Services{{}, {Loader: f}, {Coverage: f}} {
-		if r, err := typography.LoadSettings(ctx, s, services); err == nil || r != nil {
-			t.Fatal("implicit backend installed")
-		}
-	}
-	canceled, cancel := context.WithCancel(ctx)
-	cancel()
-	if r, err := typography.LoadSettings(canceled, s, f.services()); !errors.Is(err, context.Canceled) || r != nil {
-		t.Fatal("cancellation", err)
-	}
-	if len(f.calls) != 0 {
-		t.Fatal("canceled load performed IO")
-	}
-	for _, mode := range []string{"face", "resource", "identity", "error", "cancel"} {
-		t.Run(mode, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			svc := f.services()
-			svc.Loader = typography.LoadFunc(func(ctx context.Context, path string, res *fontresource.Resource) (typography.FaceEntry, error) {
-				e, _ := f.Load(ctx, path, res)
-				switch mode {
-				case "face":
-					e.Face = nil
-				case "resource":
-					e.Resource = nil
-				case "identity":
-					e.Info.ResourceID = "false"
-				case "error":
-					return e, errors.New("failure")
-				case "cancel":
-					cancel()
-				}
-				return e, nil
-			})
-			if r, err := typography.LoadSettings(ctx, s, svc); err == nil || r != nil {
-				t.Fatal("partial or invalid resolver published")
-			}
-		})
-	}
-	r := load(t, newServices(), s)
-	if _, _, err := r.Itemize(nil, "", nil); err == nil {
-		t.Fatal("nil context")
-	}
-	if _, _, err := r.Itemize(canceled, "", nil); !errors.Is(err, context.Canceled) {
-		t.Fatal("empty text ignored cancellation")
-	}
-}
-
 func TestSoftHyphensCrossPaintSpans(t *testing.T) {
-	r := load(t, newServices(), typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}})
+	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}})
 	red := documentStyle()
 	blue := red
 	blue.Color = "blue"
@@ -260,20 +212,8 @@ func TestSoftHyphensCrossPaintSpans(t *testing.T) {
 		t.Fatalf("paint broke soft-hyphen context: %+v", b)
 	}
 }
-func TestLoaderCannotSubstitutePinnedResource(t *testing.T) {
-	f := newServices()
-	selected, _ := fontresource.Read(strings.NewReader("pinned"), fontresource.Origin{Location: "pinned"})
-	svc := f.services()
-	svc.Loader = typography.LoadFunc(func(ctx context.Context, _ string, _ *fontresource.Resource) (typography.FaceEntry, error) {
-		return f.Load(ctx, "replacement", nil)
-	})
-	if r, err := typography.LoadSettings(context.Background(), typography.Settings{DefaultResource: selected, Size: 12 * dimen.BP}, svc); err == nil || r != nil {
-		t.Fatal("silently substituted pinned resource")
-	}
-}
-
 func TestLegacyPolicyAndFeatureOrigins(t *testing.T) {
-	r := load(t, newServices(), typography.Settings{DefaultPath: "primary", Size: 12 * dimen.BP})
+	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP})
 	a := documentStyle()
 	b := a
 	b.Color = "blue"
