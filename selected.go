@@ -48,7 +48,8 @@ func (s *SelectedFonts) Clone() *SelectedFonts {
 
 // NewResolver validates already loaded fonts without loading, discovery, shaping
 // or coverage queries. It canonicalizes faces in default/rule/fallback order,
-// copies mutable metadata, and requires a usable coverage service. Only explicit
+// copies mutable metadata, and checks coverage acceptance for every selected face.
+// Acceptance checks perform no glyph queries. Only explicit
 // fallback references are eligible. Serialize operations sharing this resolver.
 func NewResolver(ctx context.Context, fonts SelectedFonts, coverage Coverage) (*Resolver, error) {
 	if ctx == nil {
@@ -116,6 +117,14 @@ func NewResolver(ctx context.Context, fonts SelectedFonts, coverage Coverage) (*
 	}
 	if len(seen) != len(r.faces) {
 		return nil, fmt.Errorf("unreferenced selected font entry")
+	}
+	for _, entry := range r.selected.Faces {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err := coverage.CheckFace(entry.Face); err != nil {
+			return nil, fmt.Errorf("coverage for selected resource %q: %w", entry.Info.ResourceID, err)
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

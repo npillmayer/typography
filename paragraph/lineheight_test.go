@@ -388,3 +388,18 @@ func TestLineHeightOverrideGapsKeepDefaultContribution(t *testing.T) {
 		}
 	}
 }
+
+func (s metricStream) CheckFace(face contracts.FontFace) error {
+	switch f := face.(type) {
+	case measurementFont:
+		return s.SyntheticStreamingShaper.CheckFace(f.FontFace)
+	case gapFont:
+		return s.SyntheticStreamingShaper.CheckFace(f.FontFace)
+	case cancelFont:
+		return s.SyntheticStreamingShaper.CheckFace(f.FontFace)
+	case asymmetricFont:
+		return s.SyntheticStreamingShaper.CheckFace(f.FontFace)
+	default:
+		return s.SyntheticStreamingShaper.CheckFace(face)
+	}
+}

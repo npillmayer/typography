@@ -33,11 +33,14 @@ func NewStream(capacity int) (*Stream, error) {
 	}
 	return &Stream{out: make(chan contracts.ShapedGlyph, capacity)}, nil
 }
+
 // Glyphs returns the output channel. Drain it concurrently with Shape.
 // Finish or a terminal shaping failure closes the channel.
 func (s *Stream) Glyphs() <-chan contracts.ShapedGlyph { return s.out }
+
 // Err returns the retained terminal shaping failure, or nil, under the stream lock.
-func (s *Stream) Err() error                           { s.mu.Lock(); defer s.mu.Unlock(); return s.err }
+func (s *Stream) Err() error { s.mu.Lock(); defer s.mu.Unlock(); return s.err }
+
 // SetInitialCluster sets the scalar cluster base for the next Shape call.
 // It rejects busy or closed streams. Successful shaping advances the base by the
 // number of input runes, not UTF-8 bytes.
@@ -53,6 +56,7 @@ func (s *Stream) SetInitialCluster(n uint32) error {
 	s.next = uint64(n)
 	return nil
 }
+
 // Finish closes output when idle and returns any retained shaping error.
 // It is idempotent once closed; a busy stream returns ErrStreamBusy without closing.
 func (s *Stream) Finish() error {
@@ -67,6 +71,7 @@ func (s *Stream) Finish() error {
 	}
 	return s.err
 }
+
 // Shape synchronously produces glyphs while the caller drains Glyphs concurrently.
 // It accepts only a nonnil OpenType Face and holds its shared lock during shaping.
 // Feature ranges and output clusters use scalar coordinates; successful calls
@@ -109,9 +114,9 @@ func (s *Stream) Shape(ctx context.Context, p contracts.ShapeParams, src contrac
 	if src == nil {
 		return otshape.ErrNilRuneSource
 	}
-	face, ok := p.Font.(*Face)
-	if !ok || face == nil {
-		return fmt.Errorf("OpenType shaper received foreign or nil face %T", p.Font)
+	face, err := acceptedFace(p.Font)
+	if err != nil {
+		return fmt.Errorf("OpenType shaping: %w", err)
 	}
 	if o.Flush != contracts.ShapeFlushRun && o.Flush != contracts.ShapeFlushCluster {
 		return fmt.Errorf("unsupported flush mode %d", o.Flush)

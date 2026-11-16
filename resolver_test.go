@@ -237,3 +237,14 @@ func TestCoalescingPreservesFeatureOrigins(t *testing.T) {
 		t.Fatal("size boundary merged", err)
 	}
 }
+
+func (*fakeServices) CheckFace(face contracts.FontFace) error {
+	f, ok := face.(*fakeFace)
+	if !ok {
+		return contracts.ErrUnsupportedFontFace
+	}
+	if f == nil || f.FontFace == nil {
+		return contracts.ErrIllegalArguments
+	}
+	return nil
+}

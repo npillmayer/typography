@@ -26,6 +26,15 @@ Root `NewResolver` accepts already loaded `FaceEntry` values, explicit default,
 style-rule and fallback references, and an injected `Coverage` service. It does
 no loading, parsing or discovery. Applications select and load fonts before
 entering the engine; tytui owns its policy, providers and cache in `fontselection`.
+`Coverage` embeds `contracts.FontAcceptor`: `NewResolver` checks each distinct
+configured face in canonical role order after structural validation, without
+querying glyph coverage or metrics. `CoverageFuncs{Check, Lookup}` pairs explicit
+acceptance and lookup callbacks. Khipu separately checks all resolved run faces
+on the actual shaper before production, including fresh lazy replacement streams.
+These runtime checks allow a consumer to support several representations; they
+do not certify shaping features or rendering. Concrete conversion stays inside
+adapters, and successful layout/replay behavior is unchanged.
+
 Only explicitly configured fallback references may be tried. Faces and coverage
 services remain valid for the result lifetime.
 

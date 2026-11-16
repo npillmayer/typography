@@ -29,14 +29,14 @@ func TestItemizeCoverageOrderAndErrors(t *testing.T) {
 			f := newServices()
 			svc := f.services()
 			var queries []string
-			svc.Coverage = typography.CoverageFunc(func(face contracts.FontFace, c rune) (uint32, error) {
+			svc.Coverage = typography.CoverageFuncs{Check: newServices().CheckFace, Lookup: func(face contracts.FontFace, c rune) (uint32, error) {
 				query := fmt.Sprintf("%s:%U", face.(*fakeFace).name, c)
 				queries = append(queries, query)
 				if query == tc.failAt {
 					return 0, cmapErr
 				}
 				return f.GlyphIndex(face, c)
-			})
+			}}
 			r, err := loadResolver(t.Context(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback", "unused"}}, svc)
 			if err != nil {
 				t.Fatal(err)

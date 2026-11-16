@@ -3,6 +3,8 @@
 package typography
 
 import (
+	"fmt"
+
 	"github.com/npillmayer/khipu/contracts"
 	"github.com/npillmayer/typography/fontresource"
 )
@@ -24,16 +26,35 @@ type FaceEntry struct {
 	Resource *fontresource.Resource
 }
 
-// Coverage reports nominal cmap coverage; zero means missing. It does not promise
-// successful shaping. Failures are returned, never treated as permission to fallback.
+// Coverage reports nominal cmap coverage; zero means missing. CheckFace validates
+// representation compatibility without queries. Neither check promises successful
+// shaping. Failures are returned, never treated as permission to fallback.
 type Coverage interface {
+	contracts.FontAcceptor
 	GlyphIndex(contracts.FontFace, rune) (uint32, error)
 }
 
-// CoverageFunc adapts a nominal glyph lookup function to Coverage.
-type CoverageFunc func(contracts.FontFace, rune) (uint32, error)
+// CoverageFuncs adapts explicitly paired acceptance and nominal lookup functions.
+// Both callbacks are required and must obey Coverage's lifetime/concurrency rules.
+type CoverageFuncs struct {
+	Check  func(contracts.FontFace) error
+	Lookup func(contracts.FontFace, rune) (uint32, error)
+}
 
-// GlyphIndex delegates to f; zero denotes missing nominal coverage.
-func (f CoverageFunc) GlyphIndex(face contracts.FontFace, r rune) (uint32, error) { return f(face, r) }
+// CheckFace validates the adapter and delegates the read-only acceptance check.
+func (f CoverageFuncs) CheckFace(face contracts.FontFace) error {
+	if f.Check == nil || f.Lookup == nil || nilFontService(face) {
+		return fmt.Errorf("%w: incomplete coverage functions or nil face", contracts.ErrIllegalArguments)
+	}
+	return f.Check(face)
+}
+
+// GlyphIndex defensively checks acceptance before looking up nominal coverage.
+func (f CoverageFuncs) GlyphIndex(face contracts.FontFace, r rune) (uint32, error) {
+	if err := f.CheckFace(face); err != nil {
+		return 0, err
+	}
+	return f.Lookup(face, r)
+}
 
 var _ contracts.StyleResolver = (*Resolver)(nil)

@@ -62,10 +62,10 @@ func TestItemizeInlineMarkerBarriers(t *testing.T) {
 			f := newServices()
 			svc := f.services()
 			var queried []rune
-			svc.Coverage = typography.CoverageFunc(func(face contracts.FontFace, c rune) (uint32, error) {
+			svc.Coverage = typography.CoverageFuncs{Check: newServices().CheckFace, Lookup: func(face contracts.FontFace, c rune) (uint32, error) {
 				queried = append(queried, c)
 				return f.GlyphIndex(face, c)
-			})
+			}}
 			r, err := loadResolver(t.Context(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}}, svc)
 			if err != nil {
 				t.Fatal(err)
@@ -167,7 +167,7 @@ func TestItemizeInlineValidationAndCancellation(t *testing.T) {
 	ctx, cancel = context.WithCancel(t.Context())
 	defer cancel()
 	svc := f.services()
-	svc.Coverage = typography.CoverageFunc(func(face contracts.FontFace, c rune) (uint32, error) { cancel(); return f.GlyphIndex(face, c) })
+	svc.Coverage = typography.CoverageFuncs{Check: newServices().CheckFace, Lookup: func(face contracts.FontFace, c rune) (uint32, error) { cancel(); return f.GlyphIndex(face, c) }}
 	r, err := loadResolver(t.Context(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP}, svc)
 	if err != nil {
 		t.Fatal(err)
@@ -431,4 +431,8 @@ func TestItemizeInlineKhipuCoordinatesAndFreeze(t *testing.T) {
 			t.Fatal("lost original coordinates", atoms, clusters)
 		}
 	}
+}
+
+func (s *inlineRecordingStream) CheckFace(face contracts.FontFace) error {
+	return newServices().CheckFace(face)
 }

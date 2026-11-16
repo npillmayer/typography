@@ -3,6 +3,7 @@ package opentype
 import (
 	"context"
 	"fmt"
+
 	"github.com/npillmayer/khipu/contracts"
 	"github.com/npillmayer/typography"
 	"github.com/npillmayer/typography/fontresource"
@@ -43,9 +44,9 @@ func (s Services) Load(ctx context.Context, path string, resource *fontresource.
 // GlyphIndex accepts only a nonnil OpenType Face and performs nominal lookup
 // under its lock. Foreign faces are rejected; zero denotes missing coverage.
 func (Services) GlyphIndex(value contracts.FontFace, r rune) (uint32, error) {
-	face, ok := value.(*Face)
-	if !ok || face == nil {
-		return 0, fmt.Errorf("unsupported coverage face %T", value)
+	face, err := acceptedFace(value)
+	if err != nil {
+		return 0, fmt.Errorf("OpenType coverage: %w", err)
 	}
 	return face.GlyphIndex(r)
 }

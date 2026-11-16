@@ -28,7 +28,7 @@ func TestSelectedFontsCanonicalOrderAndOwnership(t *testing.T) {
 	s := selectedFixture(t)
 	want := []string{s.Default, s.Rules[0].ResourceID, s.Fallbacks[0]}
 	s.Faces[0], s.Faces[2] = s.Faces[2], s.Faces[0]
-	coverage := typography.CoverageFunc(func(contracts.FontFace, rune) (uint32, error) { t.Fatal("constructor queried coverage"); return 0, nil })
+	coverage := typography.CoverageFuncs{Check: newServices().CheckFace, Lookup: func(contracts.FontFace, rune) (uint32, error) { t.Fatal("constructor queried coverage"); return 0, nil }}
 	r, err := typography.NewResolver(t.Context(), s, coverage)
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestSelectedFontsRejectInvalidEntriesAndReferences(t *testing.T) {
 			}
 		})
 	}
-	for _, coverage := range []typography.Coverage{nil, (*fakeServices)(nil), typography.CoverageFunc(nil)} {
+	for _, coverage := range []typography.Coverage{nil, (*fakeServices)(nil), typography.CoverageFuncs{}} {
 		if r, err := typography.NewResolver(t.Context(), selectedFixture(t), coverage); r != nil || err == nil {
 			t.Fatal("accepted unusable coverage")
 		}

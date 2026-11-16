@@ -1,505 +1,414 @@
-# Compile-time font-face and shaper pairing
+# Font-face compatibility through CheckFace
 
-Status: proposed migration, not implemented. Based on the sibling khipu,
-typography and tytui checkouts inspected on 2026-11-15, including the completed
-[selected-font migration](FONT_INTF.md).
+Status: implemented on 2026-11-16; validation is recorded below. Revised on 2026-11-16. This plan supersedes
+its earlier proposal to propagate a font type parameter through the pipeline.
+The [selected-font boundary](FONT_INTF.md) remains in place; historical replay
+promises in that document are superseded by the
+[current replay contract](../tytui/doc/OFFLINE_REPLAY.md).
 
-## Objective and recommendation
+## Objective and scope
 
-Make an incompatible font-face/shaper combination fail to compile. Keep khipu
-and typography's generic packages independent of concrete OpenType types, and
-preserve layout behavior and replay versions 1, 2 and 3.
+Let a shaping or coverage implementation report whether it can consume a given
+`contracts.FontFace`, and reject incompatible combinations before the respective
+operation starts. Use an exported `CheckFace(contracts.FontFace) error` method.
+A backend may accept several face implementations, provided it has a real bridge
+for each. Typography and khipu remain independent of concrete font types.
 
-Use one shared type parameter, `F contracts.FontFace`, throughout the path that
-selects, resolves, retains and shapes faces. Instantiate it with
-`*opentypeadapter.Face` or `*helpers.SyntheticFont` at application composition.
-The OpenType adapter continues to keep its parsed `*ot.Font` private.
+This is runtime validation, not compile-time proof of pairing. Go checks that
+implementations provide the method; the implementation is responsible for an
+honest compatibility answer. Keep defensive checks at direct backend entry
+points as well as pipeline preflight.
 
-Carry `F` through reusable preparation, lazy replacement shaping and frozen
-content. Also type the coverage, identity and outline services that consume those
-faces. This avoids moving today's runtime mismatch from shaping into rendering.
-Numeric layout records and serialized replay records remain nongeneric.
+Keep existing nongeneric configs, style resolvers, selected fonts, prepared
+handles, frozen results and tytui result fields. Preserve khipu's synthetic
+zero-config defaults. Do not introduce a completed-result facade, parameterize
+retained owners/caches, or redesign identity and rendering interfaces. This plan
+covers box layout through shaping and coverage; renderer compatibility remains
+a separate responsibility. Implementing a HarfBuzz backend is not required.
 
-This is a coordinated Go source API migration across all three modules. Do not
-claim source compatibility with existing nongeneric composite literals. Runtime
-backend selection remains possible: tytui chooses between two independently
-type-checked execution paths and combines only their completed inspection/output
-interfaces.
+## Current conversion points
 
-## Current behavior and the unchecked boundaries
+The [font contract](../khipu/contracts/font_api.go) exposes metrics and scaling.
+`ShapeParams.Font` and resolved run styles carry that interface. Khipu resolves
+styles and retains faces but does not extract a concrete OpenType font.
 
-The current [font contract](../khipu/contracts/font_api.go) exposes metrics and
-scaling. It does not associate a face with a particular shaping implementation.
-`ShapeParams.Font` and `ResolvedRunStyle.Font` both hold `contracts.FontFace`.
-`StreamingConfig` independently accepts a style resolver, defaults and a shaper
-factory, so incompatible implementations can be assembled successfully.
+The actual conversion happens in typography's
+[OpenType stream adapter](adapter/opentype/stream.go): `Stream.Shape` asserts
+`p.Font.(*Face)` and passes the face's private `font *ot.Font` to `otshape.Params`.
+The adapter's [coverage service](adapter/opentype/loading.go) independently
+asserts the same face implementation before querying a glyph. The synthetic
+shaper has its own type check. Today these failures can be discovered only when
+the backend operation is attempted.
 
-The OpenType [face](adapter/opentype/font.go) retains `font *ot.Font`. Its
-[stream adapter](adapter/opentype/stream.go) asserts `p.Font.(*Face)` before
-constructing `otshape.Params{Font: face.font}`. Coverage, identity and outline
-services make equivalent assertions. Khipu's synthetic shaper also checks the
-concrete font type at runtime.
+Keep all concrete assertions inside the corresponding adapters. The
+[OpenType face](adapter/opentype/font.go) continues to own parsing, retained
+bytes, metrics and the lock shared by shaping, lazy queries and outlines. No
+public parsed-font accessor is needed.
 
-Changing only that `Shape` signature is insufficient. Faces survive in:
+## Shared acceptance contract
 
-- Khipu's prepared runs, shaping arena, encoded paragraphs and owner environment.
-- Prepared paragraphs and cached/lazily shaped discretionary replacements used
-  by measurement, binding and both line breakers.
-- Frozen text contexts, which retain shaping parameters and a scale.
-- Typography's selected table, resolver defaults, projection/coalescing helpers,
-  paragraph preparation, assembled vlists and retained proofs.
-- Tytui's paragraph results, document invocation caches, proof services and replay
-  evidence collection.
-
-Two application details need explicit treatment. Khipu's zero `Config` currently
-installs synthetic services; a generic implementation cannot construct a
-synthetic face for arbitrary `F`. Tytui's `pipeline.Run` currently changes one
-configuration variable from synthetic to OpenType, and returns one concrete
-`Result` type containing nongeneric frozen data. Both patterns must change.
-
-## Contract design
-
-The following signatures are proposed. Existing fields and method behavior not
-shown here remain unchanged.
+Add the following contract in `khipu/contracts`:
 
 ```go
-// In khipu/contracts. FontFace and FontScale retain their present methods.
-type FontLoader[F FontFace] interface {
-    LoadFont(io.Reader) (F, error)
-}
-
-type ResolvedRunStyle[F FontFace] struct {
-    Font F
-    // Existing size, language, script, spacing and feature fields.
-}
-
-type StyleResolver[F FontFace] interface {
-    ResolveStyle(styled.Style, ResolvedRunStyle[F]) (ResolvedRunStyle[F], error)
-}
-
-type ShapeParams[F FontFace] struct {
-    Font F
-    // Existing direction, script, language and feature fields.
-}
-
-type StreamingShaper[F FontFace] interface {
-    Shape(context.Context, ShapeParams[F], RuneReader, ShapeBufferOptions) error
-    Glyphs() <-chan ShapedGlyph
-    Err() error
-    SetInitialCluster(uint32) error
-    Finish() error
-}
-
-// In khipu.
-type StreamingConfig[F contracts.FontFace] struct {
-    NewShaper     func() (contracts.StreamingShaper[F], error)
-    Resolver      contracts.StyleResolver[F]
-    Defaults      contracts.ResolvedRunStyle[F]
-    BufferOptions contracts.ShapeBufferOptions
+// FontAcceptor checks whether a consumer can use a font face.
+// CheckFace is a cheap, read-only capability check, not a font query.
+// It rejects nil, typed-nil, unsupported and unusable face instances.
+// Success does not guarantee glyph coverage or successful shaping of any text.
+// It performs no I/O, parsing, shaping or stream-state changes.
+// Calls are safe concurrently; capabilities and accepted faces remain stable
+// for the lifetime of the configured services.
+type FontAcceptor interface {
+    CheckFace(FontFace) error
 }
 ```
 
-`FontLoader` remains optional adapter infrastructure, not a loading callback in
-typography's resolver. Discovery and loading stay upstream of selected-font input.
-
-The OpenType implementation becomes concrete at its own boundary:
+Embed `FontAcceptor` in `contracts.StreamingShaper`, leaving its other methods
+unchanged. Reuse it in typography's existing coverage interface:
 
 ```go
-func (s *Stream) Shape(
-    ctx context.Context,
-    p contracts.ShapeParams[*Face],
-    src contracts.RuneReader,
-    options contracts.ShapeBufferOptions,
-) error
-
-var _ contracts.StreamingShaper[*Face] = (*Stream)(nil)
+type Coverage interface {
+    contracts.FontAcceptor
+    GlyphIndex(contracts.FontFace, rune) (uint32, error)
+}
 ```
 
-`Shape` can then use `p.Font.font` directly after validating the face value. No
-assertion from `contracts.FontFace` to `*Face` is necessary. Compile-time assertions
-also cover the typed loader, resolver, coverage and retained rendering services.
+Make the method mandatory. An optional type assertion that skips validation for
+older implementations would leave the original hole in the pipeline. Update all
+production implementations, test doubles and examples during the migration.
 
-### Exact scope of the guarantee
+`CheckFace` checks a particular instance, not just its Go type name. A typed-nil
+pointer or an uninitialized face must fail even if the type is supported. Do
+not use backend-name strings, reflection-based type registries or pointer
+identity as a substitute for the adapter's acceptance logic.
 
-`StreamingShaper[*FaceA]` and `StreamingShaper[*FaceB]` have different method
-signatures. A factory producing the former cannot populate a configuration for
-the latter. It also cannot be widened to `StreamingShaper[contracts.FontFace]`:
-Go does not make these parameterized interfaces covariant.
+The method must not query glyphs or metrics, load resources, initialize a bridge,
+consume input, change the cluster base, close a channel, or record a terminal
+stream error. It may inspect already prepared immutable backend state. Repeated
+checks are harmless, including checks on a stream that has been finished;
+acceptance describes the backend's capability, not the stream's readiness.
+`Shape` still enforces busy/closed state and all per-run argument checks.
 
-Keep the concrete face parameter through every shaping-capable API. Do not add
-aliases instantiated with `contracts.FontFace`, `any` fields for live faces, or
-an adapter that restores the old assertion-based `Shape` entry point. Generic
-constraints alone do not forbid a caller from deliberately implementing a new
-type-erasing backend; the guarantee covers the provided typed contracts and
-implementations, not arbitrary casts or dishonest third-party implementations.
+Use errors with useful context rather than a boolean. Add a shared
+`contracts.ErrUnsupportedFontFace` sentinel for unsupported representations;
+invalid instances retain `ErrIllegalArguments`. Preserve existing `errors.Is`
+classifications where direct calls already expose them, including synthetic
+shaper argument errors. Wrap causes with the operation and run/resource context;
+callers must not need to parse error text. Successful acceptance does not promise
+support for every script, feature, buffer option or Unicode character.
 
-Compile-time pairing does not prove that a face is initialized, its retained
-bytes match its metadata, a font covers some text, a scale belongs to the correct
-face instance, or a factory returns fresh streams. Keep the existing runtime
-validation, immutable ownership, cancellation and stream-lifecycle contracts.
-Do not introduce a second generic scale model: `FontScale` only converts units
-and need not be unwrapped by a backend.
+### Multiple supported representations
 
-### Go-specific implementation rules
+The OpenType adapter accepts its own initialized `*opentype.Face`. A hypothetical
+HarfBuzz wrapper could accept its native face plus an OpenType adapter face and
+another library's face. Its private conversion helper defines that supported
+set, and both `CheckFace` and actual shaping use the same acceptance rules.
 
-- Methods cannot introduce their own independent type parameters. Put `F` on a
-  receiver type that retains faces, or use a generic package-level function.
-- Go function return types are not covariant either. A `NewStream` returning
-  `*Stream` still needs a small typed factory closure returning
-  `contracts.StreamingShaper[*Face]` when assigned to `NewShaper`.
-- Do not add `comparable` to the font constraint merely to implement equality.
-  Current projection conservatively retains boundaries for noncomparable faces.
-  Preserve that behavior, feature-domain checks and pointer/value identity rules.
-- Generic `F` cannot generally be compared with `nil`. Preserve nil and typed-nil
-  validation using a narrow internal helper. Boxing for validation/comparability
-  inspection is acceptable; recovering a backend face to dispatch shaping is not.
-- Do not replace public parsed-font encapsulation with an `OTFont()` accessor,
-  backend-name string, registration token or unchecked handle.
+Supporting an additional type requires a real conversion path, not merely a
+positive type switch. A bridge must use the same font instance, face index and
+variation state, preserve glyph IDs, and emit positions in the font units
+expected by the retained face's `FontScale`. Normalize a backend's different
+position units inside the wrapper. Coverage must describe the same font.
 
-## Khipu changes
+The OpenType adapter's retained immutable `Resource()` can supply bytes to an
+external bridge without exposing `*ot.Font`. Expensive parsing/conversion belongs
+in explicit backend preparation before selection, with any reusable state owned
+by that backend. `CheckFace` only verifies that the required state is already
+available. It must not substitute another font or silently discover/load one.
+Neither khipu nor root typography needs a switch over backend types.
 
-### Carry the face type through ownership and lazy work
+## Coverage checks during resolver construction
 
-Parameterize the following connected structures and their constructors/methods:
+Extend `NewResolver(ctx, selected, coverage)` as follows:
 
-| Area | Changes |
-| --- | --- |
-| Configuration/ownership | `Config[F]`, `StreamingConfig[F]`, `Khipukamayuq[F]`, private `typEnv[F]` |
-| Run preparation | `preparedRun[F]`, `runParameters[F]`, style resolution and run-production helpers |
-| Retained shaping | Face-bearing contexts in `shapingArena[F]`, candidate paragraphs and replacement batches |
-| Reusable execution | `PreparedParagraph[F]`, `Khipu[F]`, encode/prepare/bind/measure methods and their cache associations |
-| Freezing | `FrozenKhipu[F]`, `FrozenText[F]`, `FrozenTextContext[F]`; `CopyText` preserves `F` |
-| Breakers | Entry points and internal holders receiving `Khipu[F]`; typed discretionary providers and the parameter records that contain them |
-| Clients | Helpers, debug writers, CLI, examples and test fixtures using those types |
+1. Retain all existing structural validation: context, size, nonnil services and
+   faces, resource identities/metadata, duplicates, roles and the closed entry
+   table. No missing or unreferenced entries are accepted.
+2. After that validation, call `coverage.CheckFace` for each distinct selected
+   entry in canonical default/rules/fallback order. Check all configured entries,
+   including rules or fallback candidates that the current text may never use.
+   Repeated fallback references retain their role order but need only one check
+   per resource entry.
+3. Check cancellation between calls and before publication. On failure return no
+   resolver; wrap the acceptance error with the resource ID and coverage context.
 
-The first-fit and Knuth-Plass `Parameters` currently contain
-`DiscretionaryProvider`, whose method receives `*Khipu`. These parameter records,
-provider interfaces and relevant default constructors therefore also acquire
-`F`; they cannot simply remain nongeneric while `Khipu` changes. Keep geometry,
-scoring and candidate value records nongeneric wherever they contain no typed
-owner or font-bearing data. Do not redesign either breaking algorithm.
+This is capability validation only. Construction still performs no I/O, parsing,
+`GlyphIndex`, metric or character-coverage query. Existing itemization coverage
+queries remain in their owning stage; attached atomic markers still bypass them.
+Do not move font preparation or add a second text coverage scan.
 
-Audit initial shaping **and** `shapeDiscretionaryInput`/`streamReplacement`.
-Intrinsic measurement can trigger lazy replacement shaping; freezing is not the
-first point at which work becomes lazy. Prepared caches, replacement contexts,
-newly bound paragraphs and factories must all retain the same `F`.
+`GlyphIndex` must retain defensive face validation for callers that bypass
+`NewResolver`. The OpenType service should use the same private face validator
+as its `CheckFace` method.
 
-Keep face-free contracts nongeneric: glyph and feature records, rune readers,
-buffer options, font metrics/scales, source ranges, atomic IDs/anchors/geometry,
-hyphenation text requests, `Params`, `KnotCore`, frozen line/knot/cluster values,
-break decisions and width summaries. Pure arithmetic helpers need no `F` even
-when their callers are generic.
+The existing one-function `CoverageFunc` cannot express acceptance. Replace it
+with an explicitly paired function adapter (for example `CoverageFuncs` with
+`Check` and `Lookup` callbacks), or use small concrete implementations at its
+call sites. Missing callbacks must fail safely. Do not keep it satisfying
+`Coverage` by adding a blanket `CheckFace` that returns nil. A truly generic
+coverage implementation can explicitly accept every valid face it actually
+supports. Update fake services and constructor tests accordingly.
 
-### Synthetic backend and zero configuration
+## Shaping checks on the actual stream
 
-Standardize the supplied synthetic shaping path on `*helpers.SyntheticFont`,
-matching `NewSyntheticFont`. Give its shaper a corresponding typed `Shape`
-signature. Existing synthetic value-form calls must migrate explicitly to the
-chosen pointer form; do not retain a runtime union of backend types.
+Khipu owns the authoritative shaping preflight. Typography must not acquire a
+shaper dependency in its resolver simply to check compatibility.
 
-Make `DefaultStyleResolver[F]` a typed pass-through resolver. Add a clearly named
-`khipu.SyntheticConfig()` returning `Config[*helpers.SyntheticFont]`, preserving
-the current font, 10 pt default size, elastic spacing, fresh stream factory,
-buffering and disabled lazy hyphenation defaults. Other configuration defaults
-retain their current semantics.
+In [streamMixedCandidateParagraph](../khipu/stream_candidates.go), resolve the
+runs with `prepareMixedRuns`, then check every actual run face against the
+supplied stream before entering `consumeShaper`. Complete all checks before
+launching the producer, setting cluster bases or emitting any glyphs. This also
+covers the text-only entry point through `streamCandidateParagraph`.
 
-A zero `Config[F]` must no longer silently select a synthetic backend. Require a
-complete streaming configuration for generic execution; keep the established
-validation/error staging for incomplete explicit services. Update zero-config
-callers, paragraph examples and the CLI to call `SyntheticConfig`. Do not use a
-runtime type switch on `F` to restore implicit defaults. This changes source
-setup, not synthetic advances, layout defaults or replay evidence.
+Check resolved faces, including mappings and fallbacks, rather than just the
+configured default. Check the actual factory-created stream; validating one
+prototype is insufficient if a later factory result has different capabilities.
+A simple check per run is sufficient. Do not use `map[contracts.FontFace]` for
+deduplication: implementations need not be comparable.
 
-## Typography changes
+`prepareMixedRuns` already obtains scales. This placement promises rejection
+before shaping, not before all calls to the face's generic methods. It does not
+reorder style resolution, scalar feature clipping or scale validation. Atomic-only
+content creates no text-run face to check; do not add font queries for markers.
 
-### Selected fonts, resolution and projection
+On failure preserve the cause and add the run/source context. Return no encoded
+paragraph or partially prepared result. Typography's `Run` and `Prepare` retain
+their existing stage wrappers; no new paragraph stage or alternate fallback
+behavior is needed.
 
-Introduce `FaceEntry[F]`, `SelectedFonts[F]`, `Resolver[F]`, `Coverage[F]` and
-`CoverageFunc[F]`. The constructor becomes:
+## Lazy replacement shaping and stream ownership
 
-```go
-func NewResolver[F contracts.FontFace](
-    ctx context.Context,
-    fonts SelectedFonts[F],
-    coverage Coverage[F],
-) (*Resolver[F], error)
-```
+Initial paragraph checks are insufficient for discretionary replacements. Both
+intrinsic measurement and later layout may request lazy replacement shaping from
+a fresh stream after base text has already been prepared.
 
-`SelectedRule`, `Info`, `Binding`, resource IDs, resources, provenance codes and
-paint/document style records stay nongeneric. Keep the closed-table validation,
-canonical default/rule/fallback order, repeated role references, detached warning
-slices and shared immutable resource/face ownership from FONT_INTF.
+In [streamReplacement](../khipu/discretionary_stream.go):
 
-`Defaults` and `ResolveStyle` preserve `F`. Parameterize `ProjectStyles`,
-`CoalesceStyles` and their resolved-style comparison helpers. Their output
-typography/paint span records need no face parameter: they carry style values and
-private domain metadata, not a choice of backend. Audit private itemized styles
-and any future face-bearing additions; never hide a live face in `styled.Style`
-and assert its backend later. Cords' `styled.Text` API need not change.
+1. Preserve existing replacement validation, feature copying and cancellation.
+2. Create the stream and reject a nil or typed-nil factory result.
+3. Call that stream's `CheckFace` with the replacement's actual face before
+   `consumeShaper`, `SetInitialCluster` or `Shape`.
+4. On acceptance, use the existing synchronous producer/concurrent drain path,
+   terminal-error handling, cancellation and producer join.
 
-### Paragraphs and retained rendering
+Apply this to both pre-break and post-break fragments, including empty fragments
+that the existing path sends to a backend. Do not treat the base paragraph's
+acceptance or another factory instance's acceptance as a permanent certificate.
 
-Parameterize `paragraph.Run`, `Prepare`, `Prepared`, `Result`, `VList` and
-`Assemble` wherever they accept or retain typed configurations/frozen content.
-Keep `Input`, layout requests/options, geometry, line-height spans, placements and
-stage errors nongeneric. A `VList[F]` retains its matching `FrozenKhipu[F]`; preserve
-the retained-content correspondence check used by proof construction.
+Preserve complete-pair publication. The pre-break side may already have shaped
+when the post-break check fails, but neither side may escape as a partial pair
+or be published as a successful cached replacement. Failed attempts remain
+retryable, successful empty batches remain cached, and prior layouts and
+measurements remain unchanged. Reusing a complete cached replacement needs no
+new stream check because it performs no new shaping. Do not eagerly shape
+alternatives or reshape base text to achieve preflight.
 
-Use `IdentityProvider[F]`, `render.Backend[F]`, `render.Services[F]` and
-`render.ParagraphInput[F]`. `Identify` and `Outline` receive `F`; `VisualOrder`
-continues to consume detached glyph records without a font argument. Keep
-`ParagraphProof`, glyph/path records and line geometry nongeneric.
+Make ownership of fresh streams explicit on every pre-production exit. Extend
+the `Finish` contract to require that finishing an unused idle stream is safe,
+idempotent, releases stream-owned resources and does not emit glyphs or require
+a drainer. The current OpenType and synthetic implementations already close
+idle streams; audit all implementations and test doubles against this guarantee.
 
-The existing private proof-walking methods on nongeneric `ParagraphProof` cannot
-gain method type parameters. Convert face-bearing walkers to generic free
-functions, or a private `proofBuilder[F]` receiver returning `ParagraphProof`.
-This is a signature/ownership change only: preserve traversal and floating-point
-operation order. Metrics-only helpers may accept the existing `FontFace` query
-interface if they never return/recover a backend face or feed it to shaping;
-prefer keeping `F` where it is already available.
+The preflight owner must finish an acquired but unused stream after an acceptance
+error, cancellation or other preparation failure. Include early failures inside
+`consumeShaper` before its producer launches. Choose a single cleanup owner or
+an explicit handoff so callers do not race or inconsistently duplicate cleanup.
+After launch, preserve cancel/join before final idle cleanup, and never call
+`Finish` concurrently with active `Shape`. Keep acceptance failures identifiable
+if cleanup also fails; preserve both causes where appropriate. Never wait for a
+producer that was not launched.
 
-### OpenType adapter
+`CheckFace` itself does not poison a stream. Direct callers may check a rejected
+face and then use a supported one. Pipeline owners finish rejected streams
+because they abandon that invocation. Direct `Shape` calls still validate the
+face inside the existing terminal-error lifecycle.
 
-`Services.Load` returns `FaceEntry[*Face]`; `Loader.LoadFont` returns `*Face`.
-Coverage, identity and outline methods receive `*Face` directly. Replace foreign
-backend rejection tests with compile-fail tests, while retaining runtime tests
-for nil/uninitialized faces and invalid resources. The shaper still accesses its
-private `*ot.Font` only inside this package and under the shared face lock.
+## Adapter and application changes
 
-Do not modify normal parsing, retained bytes, lazy-query synchronization, scalar
-feature/cluster translation, synchronous production with concurrent draining,
-terminal failure handling or outline conversion. No opentype module API change
-is expected: its shaper still receives `otshape.Params` with `*ot.Font`.
+For the OpenType backend, `CheckFace` is handled only by
+`typography/adapter/opentype`. It must not be forwarded to `opentype/otshape`,
+and `otshape` must not acquire this interface-compatibility contract. The adapter
+validates the opaque `contracts.FontFace`; only actual shaping extracts its
+private concrete `*ot.Font` and passes that to the OpenType shaper. The shaper's
+existing concrete-font and shaping validation remains its own responsibility.
 
-## Tytui composition and runtime backend choice
+In typography's OpenType adapter, introduce one private helper that validates
+and returns an initialized `*Face`. Use it from `Stream.CheckFace`,
+`Services.CheckFace`, `Shape` and `GlyphIndex`, retaining operation-specific
+context. Do not move `Shape` validation outside its terminal-error handling.
+Keep the shared face lock, normal parser, retained bytes, scalar feature/cluster
+semantics, output ordering and cancellation unchanged.
 
-### Selection and paragraph execution
+Khipu's synthetic shaper gets equivalent shared validation. Preserve support for
+both `helpers.SyntheticFont` values and nonnil pointers; do not narrow the
+accepted representations or change zero-config behavior. Update other shapers
+and coverage implementations with truthful acceptance checks.
 
-`fontselection.Selection.Fonts` becomes
-`typography.SelectedFonts[*opentypeadapter.Face]`. It is an application package
-already using the adapter, so this concrete instantiation belongs here. Editable
-requests, provenance, provider policy and resource-cache behavior remain unchanged.
-Preview and each new run continue to prepare their own selected faces.
+Tytui's `fontselection` and replay setup continue to prepare selected fonts,
+then construct the resolver with the coverage service. Their existing resolver
+construction now rejects incompatible coverage. Paragraph and document execution
+receive mandatory shaping checks through khipu, including reusable preparation,
+lazy measurement and later layout. Keep error causes visible through application
+wrappers and preserve cancellation and detached result ownership.
 
-Keep the public `pipeline.Input` application-specific: Fonts is the concrete
-OpenType selection or nil for synthetic. Dispatch early into two typed paths:
+An application may additionally check every selected face against a shaper at
+composition time for earlier diagnostics. This is optional and must finish any
+probe stream it creates. It cannot replace checks on actual execution streams.
+Do not silently change font-selection-only previews into shaping operations or
+reject unused shaper candidates there as part of this migration.
 
-```text
-Fonts == nil -> runWithBackend[*helpers.SyntheticFont](...)
-Fonts != nil -> runWithBackend[*opentypeadapter.Face](...)
-```
+No changes are needed to `Result.Frozen`, vlist/proof data types, document callback
+signatures or runtime backend selection. Retained identities and rendering remain
+with their existing services; do not imply that a successful layout preflight
+certifies an arbitrary renderer.
 
-Use a private generic helper for shared orchestration, with typed resolver,
-defaults, shaper factory and retained services. Preserve the input validation and
-successful diagnostic transcript. Do not store both configurations in
-`Config[contracts.FontFace]`, or introduce an `any`-based shaper dispatcher.
+## Current replay contract
 
-### One TUI result type without erasing live shaping contracts
+Follow [tytui offline replay](../tytui/doc/OFFLINE_REPLAY.md), its
+[regression inventory](../tytui/doc/REPLAY_REGRESSION_INVENTORY.md) and
+[fixture notes](../tytui/replay/testdata/README.md). Adding runtime acceptance
+checks changes neither successful output nor wire data and requires no version
+bump or migration reader.
 
-Recommend retaining a nongeneric application `pipeline.Result` facade, backed by
-a private `retainedResult[F]` holding typed frozen content, placements and services.
-Publish it only after complete layout. Its nongeneric private interface may expose
-operations such as detached inspection, glyph proof generation and numeric
-placement access; it must not accept a font, shaper, resolver or replacement
-configuration from the caller.
+- Read and write experimental version 4 only. Versions 1–3 and unknown versions
+  fail before current-schema decoding, font acquisition or pipeline execution.
+  Historical manifests remain unchanged rejection cases, not executable modes.
+- Preserve the required `Input.Assembly` and `Evidence.Layout` for both assembly
+  policies and both synthetic/OpenType backends. Compatibility mode has absent
+  or null `LineLayout`; CSS mode requires it. Retained result state determines
+  assembly. No paint-policy selector or legacy shaping branch returns.
+- Keep current glyphs, paint/source correspondence, breaks, frozen geometry,
+  placements and OpenType proof evidence unchanged. Preserve the 16 current
+  SVG/placement controls and version-4 load/save/load cases.
+- Retain immutable resources, selected ordering, numeric provenance codes,
+  `Fonts:null`, and version-1 font identity/hash encoding. That identity version
+  is independent of the manifest version. Save uses retained bytes; Load checks
+  all stored fonts but passes only referenced entries to the resolver.
+- Keep requested paths, rule/fallback paths, descriptors, policies and diagnostics
+  through load/save as inert provenance. Never open original paths, rediscover
+  fonts or substitute missing blobs during replay. Diagnostic prose is retained
+  information rather than independently compared layout evidence.
+- Do not serialize face objects, coverage/shaping services, acceptance results,
+  backend bridge caches or VList objects. Load reconstructs runtime services and
+  reruns their normal checks. JSON field ordering alone is not a contract.
 
-Each operation executes inside the typed implementation, where the original
-`F` and services remain paired. For inspection/replay, expose detached run records
-containing source ranges, features, glyphs, clusters, size and neutral identity,
-not `contracts.FontFace`. Proof generation remains lazy over retained data, not
-eagerly moved into layout or implemented by reshaping.
-
-This deliberately changes public result access:
-
-- Replace the current broadly exposed `Frozen`/`VList` access with completed
-  inspection/placement accessors suitable for either backend. Typed internal
-  results remain available to typed helpers/tests.
-- Keep OpenType `FontSnapshot` concretely typed, or provide a detached typed
-  accessor; synthetic results have no selected-font snapshot.
-- Move independently assignable `Identity`/`Renderer` fields into the typed
-  retained result. Maintain rendering-without-metrics and injected-service tests
-  through typed construction helpers, rather than permitting mismatched services.
-- Preserve detached Input, paint spans, provenance, geometry and diagnostics.
-  Migrate the TUI, history/export and replay callers together; no fake untyped
-  frozen-result compatibility object should return live faces.
-
-This is safe type erasure of a **completed operation**, not of separately
-recombinable font/shaper values. It does not introduce a font/face wrapper or
-restore the removed fontbackend/paragraph forwarding packages.
-
-### Document layout
-
-Parameterize `documentlayout.Config[F]`, private `invocation[F]` and
-`preparedGroup[F]`, plus face-bearing `GroupResult[F]`/`Result[F]` and proof entry
-points. Preserve invocation-local prepared reuse for intrinsic measurement and
-final layout.
-
-`Document` is built before fonts are chosen and contains no backend face. Keep it
-nongeneric. Replace its current `Document.Layout` method with a package function
-such as `documentlayout.Layout[F](ctx, document, request, config)`; do not propose
-an unsupported generic method on `Document`. The TUI's document snapshot can be
-concretely instantiated with `*opentypeadapter.Face`; owning tests use their own
-fake face types.
-
-A typed invocation can still implement CSS core's nongeneric callback interfaces:
-those callbacks exchange geometry, not fonts or shapers. No CSS core generics,
-DOM changes, cross-invocation caches or document replay format are required.
-
-## Replay compatibility
-
-Keep versions 1, 2 and 3 and all existing wire records unchanged. Go type
-parameters and backend implementation names are not serialized identifiers.
-The input/policy/descriptor/font DTO separation implemented in FONT_INTF is the
-starting point, not something to undo.
-
-### Saving and evidence
-
-- Preserve `Input.Fonts: null`, field names/order/tags, nil/empty normalization,
-  numeric provenance codes (including unknown codes) and resource-ID hashing.
-- Read selected snapshots through the typed OpenType result. Pin default, rules
-  and fallbacks in the current canonical order, retaining repeated references and
-  unused configured roles. Distinct origins sharing bytes remain distinct IDs.
-- Retain normal reparsing of resource bytes during Save. Never reopen original
-  paths or call discovery. Do not serialize `F`, face pointers, factories,
-  services, prepared owners or vlists.
-- Migrate `evidence` to the completed result's detached run/geometry accessors.
-  Keep the existing wire `Run`, `Evidence` and numeric placement fields. Existing
-  face-free khipu glyph/feature/frozen geometry values need no generic wire form.
-- Keep synthetic runs' identity fields and omitted glyph proof as today.
-  Avoid eagerly invoking a service or populating a formerly absent field simply
-  because a common result interface offers that operation.
-
-### Loading and resaving
-
-1. Perform the existing strict JSON, version, policy, size and hash validation.
-2. For font cases, load store bytes through the normal OpenType adapter into
-   `FaceEntry[*Face]`. Validate every stored record, including unreferenced ones;
-   include only referenced entries in `SelectedFonts[*Face]`.
-3. Restore application provenance as data. Requested paths and descriptors must
-   never select a backend or trigger loading/discovery.
-4. Use the existing presence/absence of font selection to enter the typed
-   OpenType/synthetic pipeline branch. No new backend wire discriminator is needed.
-5. Compare paragraph text, breaks, bindings, glyphs, source/feature coordinates,
-   proof and numeric placement evidence exactly as before.
-6. Preserve normalized requested-path removal on load/resave, including nil/empty
-   behavior. Revisions and GoVersion remain external metadata; do not promise
-   byte-identical entire manifests.
-
-Version 1 retains legacy style boundaries and compatibility spacing; version 2
-retains glyph-boundary paint and compatibility spacing; version 3 retains explicit
-line-height, either supported paint policy and numeric placement evidence.
-Do not regenerate pre-step-5, pre-step6-paint or other protected fixtures to make
-the migration pass. Do not alter metric/rounding order to simplify generic code.
+A future HarfBuzz replay backend would need its own explicit replay design; this
+plan adds no new backend discriminator or cross-shaper equivalence promise.
+There is no permanent format migration framework or indefinite behavior promise.
+Intentional future algorithm changes require explicit evidence review; an
+incompatible format/semantic-contract change replaces supported versions.
+Unexpected output drift during this change is a regression, not a reason to
+regenerate fixtures or increment the version.
 
 ## Implementation sequence
 
-1. **Capture the current baseline.** Run ordinary/race/build/vet in all three
-   modules. Inventory production consumers, examples, debug/CLI utilities and
-   sibling imports of affected APIs. Capture representative synthetic/OpenType
-   evidence, including lazy replacements and document layouts. Preserve current
-   fixtures and the uncommitted FONT_INTF work; do not reset checkouts.
-2. **Prove the typed contracts.** Add a small positive/negative compilation
-   harness for two distinct fake face types. Settle the concrete synthetic type,
-   explicit synthetic configuration and function/receiver signatures before
-   propagating types. Record the deliberate Go source changes.
-3. **Migrate khipu as one dependency layer.** Change contracts, helpers, owner/run
-   storage, preparation/measurement/replacements, breakers and frozen output.
-   Migrate the CLI/debug/examples and run khipu's full checks. Temporary scaffolding
-   is allowed only during the change; no permanent untyped shaping bridge remains.
-4. **Migrate typography.** Type selected entries/resolver/projection, OpenType
-   services, paragraph handles and retained proof services. Preserve metadata-only
-   types and all algorithms. Add dependency and compile-fail coverage, then run
-   typography's full checks against the migrated khipu checkout.
-5. **Migrate tytui composition and consumers together.** Specialize fontselection,
-   split synthetic/OpenType execution, introduce the completed-result facade,
-   migrate document callbacks/results, TUI inspection/export and replay evidence.
-   Keep asynchronous font-stage error reporting and editable-file semantics.
-6. **Remove transitional APIs and document the contract.** No mixed untyped/typed
-   production paths or aliases to `FontFace` remain. Update package godoc/READMEs,
-   AGENTS guidance where present, API examples, FONT_INTF follow-up references and
-   all known callers. Keep the module Go versions unless an actual feature requires
-   a change; the design does not require a language upgrade.
-7. **Validate the integrated migration.** Run the checks and acceptance matrix
-   below on final code in all three modules. Report actual results and deviations.
-   Do not commit or push as part of implementation.
+1. Add `FontAcceptor`, error classification and the unused-stream `Finish`
+   guarantee in khipu/contracts. Update its package documentation, synthetic
+   implementation, examples and shaper test doubles.
+2. Add actual-run preflight and explicit stream cleanup in khipu, including both
+   base encoding entry points and lazy replacements. Keep existing ownership,
+   publication, feature domains and shaping algorithms intact.
+3. Extend typography coverage, replace one-function adapters, and add constructor
+   acceptance checks. Implement OpenType shaping/coverage acceptance with shared
+   private validation. Update package READMEs and API comments.
+4. Update tytui service/test implementations and integration expectations for
+   earlier compatibility failures. Keep existing pipeline/result/replay APIs and
+   successful evidence unchanged.
+5. Run cross-module regression checks and review the final diff for accidental
+   rendering, discovery, generic-type or wire-format changes.
 
-The dependency-layer transitions will temporarily break downstream compilation.
-Coordinate them in the same development change; do not publish an intermediate
-module combination or preserve unsafe wrappers merely to keep each transient
-checkout green. External consumers need a source migration/release note even
-though replay data remains compatible.
+These are coordinated source changes: adding mandatory interface methods breaks
+implementations until updated. Compiler failures identify missing methods, but
+runtime regression tests establish pairing behavior. Do not retain a permissive
+legacy path merely to make old implementations compile.
 
-## Verification and acceptance criteria
+## Acceptance tests and required checks
 
-### Compile-time checks
+Owning package tests must cover:
 
-Use compiler tests, not runtime assertions, to establish the new guarantee.
-Keep intentionally invalid programs under testdata and compile them in a
-controlled harness using the actual local modules/toolchain. Include a matching
-positive case so missing dependencies or unrelated syntax errors cannot be
-mistaken for successful rejection. Check the relevant type/signature diagnostic
-without overfitting its full compiler wording.
+- Supported faces, foreign types, nil interfaces, typed-nil and uninitialized
+  faces; meaningful wrapped errors and preserved `errors.Is` causes. A fake
+  multi-representation backend demonstrates that acceptance is not one-to-one.
+- CheckFace purity: no metrics, coverage queries, reads, parsing, glyph emission,
+  cluster changes or terminal errors. Rejection followed by acceptance on the
+  same directly used stream succeeds; concurrent checks are race-free.
+- Resolver construction checks every distinct configured entry in canonical
+  order, preserves repeated fallback roles, and returns no resolver on failure.
+  Existing validation/cancellation and immutable snapshot behavior remain.
+- A later incompatible resolved run fails before any base-paragraph shaping,
+  even if earlier runs are compatible. Cover mapped/fallback faces, atomics and
+  noncomparable face implementations. Direct Shape/GlyphIndex remain defensive.
+- Lazy pre/post failures with a factory whose later stream accepts a different
+  set of faces. Verify no partial pair/cache/result, retryability, successful
+  empty caching, unchanged previous results and no reshaping of base text.
+- Finish/cleanup after rejected preflight, preparation failure, cancellation and
+  pre-launch consumer validation failure; no leaked resources or goroutines.
+  Preserve bounded-channel draining, terminal failure and cancel/join behavior.
+- Real OpenType shaping and coverage, synthetic value/pointer support, feature
+  domains, RTL/fallback, placement and current retained proofs. Test unit/identity
+  consistency for any real bridge introduced separately.
 
-Required negative cases:
-
-- A synthetic face passed to OpenType `Shape`, and the reverse pairing.
-- An OpenType stream/factory in a synthetic `StreamingConfig`, including an
-  attempted widening to `StreamingShaper[contracts.FontFace]`.
-- A resolver/default/selected table with a different `F` than its configuration
-  or coverage implementation.
-- A prepared/encoded paragraph passed to an owner or discretionary provider
-  instantiated for another face type.
-- A frozen result supplied to identity/outline services for another face type.
-- A document configuration combining the wrong resolver and shaper factory.
-
-Positive checks cover both concrete backends and at least two independent fake
-backends through encode, lazy shaping, freeze and proof construction. Audit for
-`any`/`FontFace` erasure on shaping-capable paths, not just explicit assertions in
-the OpenType adapter. Generic dependency audits must continue to forbid DOM,
-fontfind, tytui and concrete backend imports where currently forbidden.
-
-### Behavioral and compatibility checks
-
-Retain existing tests for scalar feature/cluster domains, source byte ranges,
-mixed scripts, whole-grapheme fallback, both paint policies, atomic barriers,
-stream cancellation/terminal errors, detached snapshots and retained bytes.
-Test repeated preparation/layout/measurement, lazy replacement success/empty/error
-cache behavior and fresh stream factories. Preserve signed/zero geometry,
-first-baseline/line-height behavior and rendering without metric queries.
-
-Keep tytui's replay controls, including `TestPreStep5VersionOneFixtures`,
-`TestLegacyPlacementEvidenceSurvivesResave`, `TestPaintPolicyVersions`,
-`TestLineHeightReplayVersion3`, `TestWireProvenanceCodesAndFieldNames`, descriptor
-bypass and the FONT_INTF selection wire/resave/unreferenced-font tests. Verify
-zero discovery calls on load **and** resave, missing/tampered blob rejection,
-unused-role retention and original-file removal. Exercise synthetic and OpenType
-results through the same TUI history/export/replay facade without changing proof
-timing, errors or evidence.
-
-Run in **khipu, typography and tytui** after migration:
+Run these commands independently in each of `khipu`, `typography` and `tytui`
+after implementation:
 
 ```sh
-go test ./... -count=1
-go test -race ./... -count=1
+go test ./...
+go test -race ./...
 go build ./...
 go vet ./...
 ```
 
-Compile-fail harnesses, dependency audits, examples and adapter service regressions
-must be included. Check formatting and unchanged protected fixtures. No changes to
-cords, opentype, fontfind or CSS core are planned; if the implementation requires
-any, explain the dependency and run that module's owning checks too.
+Include typography's generic-package dependency audits and OpenType adapter
+service regressions, using sibling OpenType fixtures. Run relevant
+`css-box-layout` integration checks for the cross-module pipeline change.
+Tytui coverage must include pipeline/document preparation, repeated measurement
+and layout, source correspondence, failure recovery and retained rendering.
 
-Completion means ordinary public composition cannot pair the supplied backends'
-faces and shapers incorrectly, lazy work never loses that pairing, generic cores
-remain backend-independent, and offline replay preserves v1/v2/v3 semantics and
-protected evidence without a new format version.
+Replay checks include current behavior and synthetic placement controls, CSS
+assembly, color bypass, current-format resaves, strict format validation,
+historical/unknown rejection before resources, provenance/identity/ownership,
+requested-path resaves, unreferenced stored-font validation, discovery bypass,
+offline resource removal, tampering and cancellation. Keep static historical
+fixtures unchanged. Report checks actually run, not earlier passing results.
 
-## Planning validation
+## Risk and review boundary
 
-For this plan, the current source paths and consumers were inspected. A temporary
-standalone Go compiler probe confirmed a matching generic configuration compiles,
-while cross-face assignment and widening a concrete shaper to `Shaper[FontFace]`
-fail with incompatible method signatures. This validates the proposed type
-relationship only. No production implementation or module test suite was changed
-or run for this planning task.
+The change is substantially smaller than propagating a type parameter through
+all retained content. The main risks are incomplete interface migration,
+acceptance rules that disagree with actual operations, missed lazy paths, and
+incorrect cleanup before producer launch. Mandatory contracts, shared backend
+validators and lifecycle tests address those risks without changing layout
+algorithms or result ownership.
+
+Implementation follows the contract and sequence above. `CoverageFuncs` is the
+paired callback adapter. Base and replacement owners finish streams on every
+exit; cleanup after production follows cancel/join and preserves distinct causes.
+Cleanup snapshots the terminal error before calling Finish. If a primary failure
+already exists, repeated terminal causes are removed from the Finish error,
+including wrapped/joined causes, while independent resource-release failures
+remain visible. Internal producer cancellation therefore does not make a consumer
+failure appear to be caller cancellation. Existing layout-time provider
+cancellation limits remain unchanged.
+Tytui's private selection test seam pairs its injected loader with explicit
+coverage; the public Prepare API still installs OpenType services.
+
+Validation completed on 2026-11-16 in the actual sibling checkouts:
+
+| Module | Ordinary tests | Race tests | Build | Vet |
+| --- | --- | --- | --- | --- |
+| khipu | Passed | Passed | Passed | Passed |
+| typography | Passed | Passed | Passed | Passed |
+| tytui | Passed | Passed | Passed | Passed |
+| css-box-layout | Passed | Passed | Passed | Passed |
+
+Commands were `go test ./... -count=1`, `go test -race ./... -count=1`,
+`go build ./...` and `go vet ./...` in each module. Typography's dependency
+audit and OpenType service regressions, tytui's document integration and replay
+controls, and the new acceptance/lifecycle regressions were included in those
+suites. No replay source, manifest or proof fixture changed. Diff whitespace
+checks passed in all three edited modules. No commits or pushes were made.
+
+The same four-module checks were rerun successfully after the cleanup
+error-reporting fix. New regressions first reproduced the failure on the old
+implementation, then passed for base shaping and both lazy replacement sides,
+with and without independent cleanup failures. They also cover wrapped/joined
+errors, caller cancellation and terminal state changed during Finish.

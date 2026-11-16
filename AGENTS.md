@@ -28,7 +28,9 @@ or default backend belongs here. Validate a closed entry table: one entry for ea
 referenced resource ID, no duplicates/missing/unreferenced entries. Canonical
 snapshot/Info order is default, rules, fallbacks; retain role order and repeated
 fallback references. Copy metadata/warnings and share only stable faces/resources.
-Construction performs no I/O, parsing or coverage query. Keep mapping,
+Construction performs no I/O, parsing or coverage query. It calls the injected
+Coverage.CheckFace once per distinct canonical selected entry after structural
+validation. This is read-only representation acceptance, not glyph preflight. Keep mapping,
 grapheme/script/fallback and snapshot policy here; test it with fake preloaded
 faces. Tytui prepares fonts before layout; versioned wire DTOs stay in replay.
 ItemizeWithMetadata preserves original paint spans alongside coalesced shaping.
@@ -240,3 +242,15 @@ compatibility modes. Current glyph/placement controls and immutable resources
 remain contracts. See [tytui offline replay](../tytui/doc/OFFLINE_REPLAY.md) for
 case creation and deliberate evidence review. No automatic fixture update or
 permanent format migration framework is provided.
+
+Font acceptance uses khipu/contracts.FontAcceptor.CheckFace, embedded in shapers
+and Coverage. Keep checks cheap, concurrent-safe and free of I/O, parsing,
+metric/glyph queries and stream-state changes. OpenType face acceptance is handled
+only by typography/adapter/opentype: Stream.CheckFace and Services.CheckFace share
+private validation with direct Shape/GlyphIndex calls. Do not forward CheckFace
+to opentype/otshape or add this interface-compatibility contract there. The adapter
+passes its private concrete *ot.Font to otshape only for actual shaping.
+Khipu checks actual resolved runs before production and each fresh lazy replacement
+stream; failures publish no partial output and remain retryable. Finish unused streams and join
+active producers before cleanup. No type parameters, renderer redesign, new
+backend serialization or replay version changes belong to this migration.
