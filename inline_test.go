@@ -28,23 +28,23 @@ func TestItemizeInlineObjectOnlyBypassesResolutionAndCoverage(t *testing.T) {
 	f.coverageErr = errors.New("coverage must not be called")
 	s := documentStyle()
 	s.Language = "not a language!" // Resolving this style would fail.
-	for _, policy := range []typography.PaintPolicy{typography.GlyphBoundary, typography.LegacyStyleBoundary} {
-		text := "\uFFFC\uFFFC"
-		spans := []style.Span{{Start: 0, End: 6, Style: s}}
-		anchors := []contracts.AtomicAnchor{{ID: 9}, {ID: 2, ByteOffset: 3}}
-		got, bindings, err := r.ItemizeInline(t.Context(), text, spans, anchors, policy)
-		if err != nil || len(bindings) != 0 || got.Raw().String() != text {
-			t.Fatal(got, bindings, err)
-		}
-		for run := range got.StyleRanges() {
-			if run.Style != nil {
-				t.Fatal("marker acquired a text style")
-			}
-		}
-		if spans[0].Style != s || anchors[0].ID != 9 {
-			t.Fatal("caller inputs mutated")
+
+	text := "\uFFFC\uFFFC"
+	spans := []style.Span{{Start: 0, End: 6, Style: s}}
+	anchors := []contracts.AtomicAnchor{{ID: 9}, {ID: 2, ByteOffset: 3}}
+	got, bindings, err := r.ItemizeInline(t.Context(), text, spans, anchors)
+	if err != nil || len(bindings) != 0 || got.Raw().String() != text {
+		t.Fatal(got, bindings, err)
+	}
+	for run := range got.StyleRanges() {
+		if run.Style != nil {
+			t.Fatal("marker acquired a text style")
 		}
 	}
+	if spans[0].Style != s || anchors[0].ID != 9 {
+		t.Fatal("caller inputs mutated")
+	}
+
 }
 
 func TestItemizeInlineMarkerBarriers(t *testing.T) {
@@ -70,7 +70,7 @@ func TestItemizeInlineMarkerBarriers(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, b, err := r.ItemizeInline(t.Context(), tc.text, nil, []contracts.AtomicAnchor{{ID: 1, ByteOffset: tc.offset}}, typography.GlyphBoundary)
+			out, b, err := r.ItemizeInline(t.Context(), tc.text, nil, []contracts.AtomicAnchor{{ID: 1, ByteOffset: tc.offset}})
 			if err != nil || len(b) != len(tc.ranges) {
 				t.Fatal(b, err)
 			}
@@ -105,24 +105,22 @@ func TestItemizeInlinePaintAndLiteralMarker(t *testing.T) {
 	object.Language = "invalid language!"
 	text := "fi\uFFFCfi"
 	spans := []style.Span{{Start: 0, End: 1, Style: a}, {Start: 1, End: 2, Style: b}, {Start: 2, End: 5, Style: object}, {Start: 5, End: 6, Style: a}, {Start: 6, End: 7, Style: b}}
-	for _, policy := range []typography.PaintPolicy{typography.GlyphBoundary, typography.LegacyStyleBoundary} {
-		_, bindings, err := r.ItemizeInline(t.Context(), text, spans, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 2}}, policy)
-		want := 2
-		if policy == typography.LegacyStyleBoundary {
-			want = 4
-		}
-		if err != nil || len(bindings) != want {
-			t.Fatal(policy, bindings, err)
-		}
+
+	_, bindings, err := r.ItemizeInline(t.Context(), text, spans, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 2}})
+	want := 2
+
+	if err != nil || len(bindings) != want {
+		t.Fatal(bindings, err)
 	}
+
 	// Literal U+FFFC still follows the existing text itemizer. Only the first
 	// occurrence is attached; it must not exempt the second from that path.
-	_, _, err := r.ItemizeInline(t.Context(), "\uFFFC\uFFFC", nil, []contracts.AtomicAnchor{{ID: 1}}, typography.GlyphBoundary)
+	_, _, err = r.ItemizeInline(t.Context(), "\uFFFC\uFFFC", nil, []contracts.AtomicAnchor{{ID: 1}})
 	if err == nil || !strings.Contains(err.Error(), "missing glyph") {
 		t.Fatal(err)
 	}
 	f.entries["primary"].Face.(*fakeFace).chars += "\uFFFC"
-	_, bindings, err := r.ItemizeInline(t.Context(), "\uFFFC\uFFFC", nil, []contracts.AtomicAnchor{{ID: 1}}, typography.GlyphBoundary)
+	_, bindings, err = r.ItemizeInline(t.Context(), "\uFFFC\uFFFC", nil, []contracts.AtomicAnchor{{ID: 1}})
 	if err != nil || len(bindings) != 1 || bindings[0].Start != 3 || bindings[0].End != 6 {
 		t.Fatal(bindings, err)
 	}
@@ -135,29 +133,26 @@ func TestItemizeInlineValidationAndCancellation(t *testing.T) {
 		{{ID: 0, ByteOffset: 2}}, {{ID: 1, ByteOffset: 2}, {ID: 1, ByteOffset: 5}}, {{ID: 1, ByteOffset: 5}, {ID: 2, ByteOffset: 2}},
 		{{ID: 1, ByteOffset: 2}, {ID: 2, ByteOffset: 2}}, {{ID: 1, ByteOffset: 0}}, {{ID: 1, ByteOffset: 1}}, {{ID: 1, ByteOffset: 3}}, {{ID: 1, ByteOffset: 8}}, {{ID: 1, ByteOffset: ^uint64(0)}},
 	} {
-		out, b, err := r.ItemizeInline(t.Context(), "é\uFFFC\uFFFC", nil, anchors, typography.GlyphBoundary)
+		out, b, err := r.ItemizeInline(t.Context(), "é\uFFFC\uFFFC", nil, anchors)
 		if !errors.Is(err, contracts.ErrIllegalArguments) || b != nil {
 			t.Fatal(anchors, out, b, err)
 		}
 	}
 	anchors := []contracts.AtomicAnchor{{ID: 1}}
 	for _, text := range []string{"\xff\uFFFC", "界"} {
-		if _, _, err := r.ItemizeInline(t.Context(), text, nil, anchors, typography.GlyphBoundary); !errors.Is(err, contracts.ErrIllegalArguments) {
+		if _, _, err := r.ItemizeInline(t.Context(), text, nil, anchors); !errors.Is(err, contracts.ErrIllegalArguments) {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := r.ItemizeInline(t.Context(), "\uFFFC", nil, anchors, "unknown"); !errors.Is(err, contracts.ErrIllegalArguments) {
-		t.Fatal(err)
-	}
-	if _, _, err := r.ItemizeInline(nil, "\uFFFC", nil, anchors, typography.GlyphBoundary); !errors.Is(err, contracts.ErrIllegalArguments) {
+	if _, _, err := r.ItemizeInline(nil, "\uFFFC", nil, anchors); !errors.Is(err, contracts.ErrIllegalArguments) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, _, err := r.ItemizeInline(ctx, "\uFFFC", nil, nil, typography.GlyphBoundary); !errors.Is(err, context.Canceled) {
+	if _, _, err := r.ItemizeInline(ctx, "\uFFFC", nil, nil); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	if _, _, err := r.ItemizeInline(ctx, "\uFFFC", nil, anchors, typography.GlyphBoundary); !errors.Is(err, context.Canceled) {
+	if _, _, err := r.ItemizeInline(ctx, "\uFFFC", nil, anchors); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
 	// A genuine style boundary inside a text grapheme is still invalid even
@@ -165,7 +160,7 @@ func TestItemizeInlineValidationAndCancellation(t *testing.T) {
 	a, b := documentStyle(), documentStyle()
 	b.EmSize *= 2
 	spans := []style.Span{{Start: 0, End: 1, Style: a}, {Start: 1, End: 6, Style: b}}
-	if _, _, err := r.ItemizeInline(t.Context(), "a\u0301\uFFFC", spans, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 3}}, typography.GlyphBoundary); err == nil || !strings.Contains(err.Error(), "grapheme") {
+	if _, _, err := r.ItemizeInline(t.Context(), "a\u0301\uFFFC", spans, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 3}}); err == nil || !strings.Contains(err.Error(), "grapheme") {
 		t.Fatal(err)
 	}
 	// Cancellation triggered by the last coverage query must publish nothing.
@@ -177,7 +172,7 @@ func TestItemizeInlineValidationAndCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, bindings, err := r.ItemizeInline(ctx, "\uFFFCa", nil, anchors, typography.GlyphBoundary)
+	out, bindings, err := r.ItemizeInline(ctx, "\uFFFCa", nil, anchors)
 	if !errors.Is(err, context.Canceled) || bindings != nil {
 		t.Fatal(bindings, err)
 	}
@@ -198,56 +193,56 @@ func TestItemizeInlineFeatureDomains(t *testing.T) {
 		{Tag: [4]byte{'a', 'l', 'l', ' '}, Start: -1, End: -1, Enabled: false},
 		{Tag: [4]byte{'t', 'a', 'i', 'l'}, Start: 4, End: 7, Enabled: true, Value: 2},
 	}
-	for _, policy := range []typography.PaintPolicy{typography.GlyphBoundary, typography.LegacyStyleBoundary} {
-		spans := []style.Span{{Start: 0, End: uint64(len(text)), Style: documentStyle()}}
-		anchors := []contracts.AtomicAnchor{{ID: 7, ByteOffset: 3}}
-		out, bindings, err := r.ItemizeInline(t.Context(), text, spans, anchors, policy)
+
+	spans := []style.Span{{Start: 0, End: uint64(len(text)), Style: documentStyle()}}
+	anchors := []contracts.AtomicAnchor{{ID: 7, ByteOffset: 3}}
+	out, bindings, err := r.ItemizeInline(t.Context(), text, spans, anchors)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bindings) != 4 {
+		t.Fatal(bindings)
+	}
+	defaults := r.Defaults()
+	defaults.Features = slices.Clone(features)
+	// Expected intersections in each emitted style span: é, a, fi, אב.
+	want := [][][3]int{{{2, 0, 1}}, {{0, 0, 1}, {2, 0, 1}}, {{0, 0, 2}, {2, 0, 2}, {3, 1, 2}}, {{0, 0, 1}, {2, 0, 2}, {3, 0, 2}}}
+	for i, b := range bindings {
+		s, _, err := out.StyleAt(b.Start)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(bindings) != 4 {
-			t.Fatal(bindings)
-		}
-		defaults := r.Defaults()
-		defaults.Features = slices.Clone(features)
-		// Expected intersections in each emitted style span: é, a, fi, אב.
-		want := [][][3]int{{{2, 0, 1}}, {{0, 0, 1}, {2, 0, 1}}, {{0, 0, 2}, {2, 0, 2}, {3, 1, 2}}, {{0, 0, 1}, {2, 0, 2}, {3, 0, 2}}}
-		for i, b := range bindings {
-			s, _, err := out.StyleAt(b.Start)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err := r.ResolveStyle(s, defaults)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var expected []contracts.ShapeFeature
-			for _, entry := range want[i] {
-				f := features[entry[0]]
-				f.Start, f.End = entry[1], entry[2]
-				expected = append(expected, f)
-			}
-			if !reflect.DeepEqual(got.Features, expected) {
-				t.Fatalf("%v span %d: %+v want %+v", policy, i, got.Features, expected)
-			}
-			if len(got.Features) > 0 {
-				got.Features[0].Start = 99
-			}
-		}
-		if !reflect.DeepEqual(features, defaults.Features) {
-			t.Fatal("feature defaults mutated")
-		}
-		spans[0].Style.Language = "invalid!"
-		anchors[0].ID = 99
-		s, _, _ := out.StyleAt(6)
-		if _, err := r.ResolveStyle(s, defaults); err != nil {
-			t.Fatal("retained caller span slice", err)
-		}
-		defaults.Features = []contracts.ShapeFeature{{Start: 4, End: 2}}
-		if _, err := r.ResolveStyle(s, defaults); !errors.Is(err, contracts.ErrIllegalArguments) {
+		got, err := r.ResolveStyle(s, defaults)
+		if err != nil {
 			t.Fatal(err)
 		}
+		var expected []contracts.ShapeFeature
+		for _, entry := range want[i] {
+			f := features[entry[0]]
+			f.Start, f.End = entry[1], entry[2]
+			expected = append(expected, f)
+		}
+		if !reflect.DeepEqual(got.Features, expected) {
+			t.Fatalf("%v span %d: %+v want %+v", "glyph-boundary", i, got.Features, expected)
+		}
+		if len(got.Features) > 0 {
+			got.Features[0].Start = 99
+		}
 	}
+	if !reflect.DeepEqual(features, defaults.Features) {
+		t.Fatal("feature defaults mutated")
+	}
+	spans[0].Style.Language = "invalid!"
+	anchors[0].ID = 99
+	s, _, _ := out.StyleAt(6)
+	if _, err := r.ResolveStyle(s, defaults); err != nil {
+		t.Fatal("retained caller span slice", err)
+	}
+	defaults.Features = []contracts.ShapeFeature{{Start: 4, End: 2}}
+	if _, err := r.ResolveStyle(s, defaults); !errors.Is(err, contracts.ErrIllegalArguments) {
+		t.Fatal(err)
+	}
+
 }
 
 func TestItemizeInlineNonzeroFeatureOrigin(t *testing.T) {
@@ -255,7 +250,7 @@ func TestItemizeInlineNonzeroFeatureOrigin(t *testing.T) {
 	a, b := documentStyle(), documentStyle()
 	b.EmSize *= 2
 	text := "xxfi\uFFFCfi"
-	out, bindings, err := r.ItemizeInline(t.Context(), text, []style.Span{{Start: 0, End: 2, Style: a}, {Start: 2, End: 9, Style: b}}, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 4}}, typography.GlyphBoundary)
+	out, bindings, err := r.ItemizeInline(t.Context(), text, []style.Span{{Start: 0, End: 2, Style: a}, {Start: 2, End: 9, Style: b}}, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 4}})
 	if err != nil || len(bindings) != 3 {
 		t.Fatal(bindings, err)
 	}
@@ -281,52 +276,49 @@ func TestItemizeInlinePaintFeatureDomains(t *testing.T) {
 	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP})
 	a, b := documentStyle(), documentStyle()
 	b.Color = "blue"
-	// The first source span contains fi and an object. GlyphBoundary coalesces
+	// The first source span contains fi and an object. Itemization coalesces
 	// the following paint-only change before splitting around the object;
-	// LegacyStyleBoundary retains the second source span's independent origin.
+	// The feature origin includes the object scalar before the second pair.
 	spans := []style.Span{{Start: 0, End: 5, Style: a}, {Start: 5, End: 7, Style: b}}
 	defaults := r.Defaults()
 	defaults.Features = []contracts.ShapeFeature{{Start: 3, End: 5, Enabled: true}}
-	for _, policy := range []typography.PaintPolicy{typography.GlyphBoundary, typography.LegacyStyleBoundary} {
-		out, _, err := r.ItemizeInline(t.Context(), "fi\uFFFCfi", spans, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 2}}, policy)
-		if err != nil {
-			t.Fatal(err)
-		}
-		s, _, _ := out.StyleAt(5)
-		resolved, err := r.ResolveStyle(s, defaults)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if policy == typography.GlyphBoundary {
-			if len(resolved.Features) != 1 || resolved.Features[0].Start != 0 || resolved.Features[0].End != 2 {
-				t.Fatal("coalesced domain lost", resolved.Features)
-			}
-		} else if len(resolved.Features) != 0 {
-			t.Fatal("feature escaped legacy domain", resolved.Features)
-		}
+
+	out, _, err := r.ItemizeInline(t.Context(), "fi\uFFFCfi", spans, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 2}})
+	if err != nil {
+		t.Fatal(err)
 	}
+	s, _, _ := out.StyleAt(5)
+	resolved, err := r.ResolveStyle(s, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(resolved.Features) != 1 || resolved.Features[0].Start != 0 || resolved.Features[0].End != 2 {
+		t.Fatal("coalesced domain lost", resolved.Features)
+	}
+
 }
 
 func TestItemizeInlineTextOnlyCompatibility(t *testing.T) {
 	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}})
 	for _, text := range []string{"", "fié\u00adאב"} {
-		for _, policy := range []typography.PaintPolicy{typography.GlyphBoundary, typography.LegacyStyleBoundary} {
-			want, wb, err := r.ItemizePolicy(t.Context(), text, nil, policy)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, gb, err := r.ItemizeInline(t.Context(), text, nil, nil, policy)
-			if err != nil || got.Raw().String() != want.Raw().String() || !reflect.DeepEqual(gb, wb) {
-				t.Fatal(gb, wb, err)
-			}
-			for _, b := range wb {
-				ws, _, _ := want.StyleAt(b.Start)
-				gs, _, _ := got.StyleAt(b.Start)
-				if !ws.Equals(gs) {
-					t.Fatal("text-only style identity changed")
-				}
+
+		want, wb, err := r.Itemize(t.Context(), text, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, gb, err := r.ItemizeInline(t.Context(), text, nil, nil)
+		if err != nil || got.Raw().String() != want.Raw().String() || !reflect.DeepEqual(gb, wb) {
+			t.Fatal(gb, wb, err)
+		}
+		for _, b := range wb {
+			ws, _, _ := want.StyleAt(b.Start)
+			gs, _, _ := got.StyleAt(b.Start)
+			if !ws.Equals(gs) {
+				t.Fatal("text-only style identity changed")
 			}
 		}
+
 	}
 }
 
@@ -366,7 +358,7 @@ func TestItemizeInlineKhipuCoordinatesAndFreeze(t *testing.T) {
 	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}})
 	text := "éa\uFFFCfiאב"
 	anchors := []contracts.AtomicAnchor{{ID: 7, ByteOffset: 3}}
-	out, _, err := r.ItemizeInline(t.Context(), text, nil, anchors, typography.GlyphBoundary)
+	out, _, err := r.ItemizeInline(t.Context(), text, nil, anchors)
 	if err != nil {
 		t.Fatal(err)
 	}

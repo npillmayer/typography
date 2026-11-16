@@ -212,16 +212,12 @@ func TestSoftHyphensCrossPaintSpans(t *testing.T) {
 		t.Fatalf("paint broke soft-hyphen context: %+v", b)
 	}
 }
-func TestLegacyPolicyAndFeatureOrigins(t *testing.T) {
+func TestCoalescingPreservesFeatureOrigins(t *testing.T) {
 	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP})
 	a := documentStyle()
 	b := a
 	b.Color = "blue"
 	spans := []style.Span{{Start: 0, End: 1, Style: a}, {Start: 1, End: 2, Style: b}}
-	_, bindings, err := r.ItemizePolicy(context.Background(), "aa", spans, typography.LegacyStyleBoundary)
-	if err != nil || len(bindings) != 2 {
-		t.Fatalf("legacy behavior changed: %+v %v", bindings, err)
-	}
 	defaults := r.Defaults()
 	defaults.Features = []contracts.ShapeFeature{{Tag: [4]byte{'l', 'i', 'g', 'a'}, Start: 1, End: 2, Enabled: true}}
 	grouped, err := typography.CoalesceStyles("aa", spans, r, defaults)

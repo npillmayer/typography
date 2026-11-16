@@ -29,53 +29,48 @@ func assertColorFree(t *testing.T, value any) {
 	inspect(reflect.TypeOf(value))
 }
 
-func TestRenderingBypassProjectionAndLegacyDomains(t *testing.T) {
+func TestRenderingBypassProjection(t *testing.T) {
 	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP})
 	red := documentStyle()
 	blue := red
 	blue.Color = "blue"
 	spans := []style.Span{{Start: 0, End: 1, Style: red}, {Start: 1, End: 2, Style: blue}}
-	for _, policy := range []typography.PaintPolicy{typography.GlyphBoundary, typography.LegacyStyleBoundary} {
-		t.Run(string(policy), func(t *testing.T) {
-			projected, err := typography.ProjectStyles("fi", spans, r, r.Defaults(), policy)
+
+	t.Run("glyph-boundary", func(t *testing.T) {
+		projected, err := typography.ProjectStyles("fi", spans, r, r.Defaults())
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := 1
+
+		if len(projected) != want || projected[0].Style.Typography != red.Typography() {
+			t.Fatalf("projection: %+v", projected)
+		}
+		for _, span := range projected {
+			assertColorFree(t, span.Style)
+			resolved, err := r.ResolveStyle(span.Style, r.Defaults())
+			if err != nil || resolved.EmSize != red.EmSize {
+				t.Fatalf("projection lost typography: %+v %v", resolved, err)
+			}
+		}
+		text, bindings, err := r.Itemize(context.Background(), "fi", spans)
+		if err != nil || len(bindings) != want {
+			t.Fatalf("itemization: %+v %v", bindings, err)
+		}
+		for _, pos := range []uint64{0, 1} {
+			value, _, err := text.StyleAt(pos)
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := 1
-			if policy == typography.LegacyStyleBoundary {
-				want = 2
-				if projected[0].Style.Equals(projected[1].Style) {
-					t.Fatal("legacy boundary lost when color was removed")
-				}
-			}
-			if len(projected) != want || projected[0].Style.Typography != red.Typography() {
-				t.Fatalf("projection: %+v", projected)
-			}
-			for _, span := range projected {
-				assertColorFree(t, span.Style)
-				resolved, err := r.ResolveStyle(span.Style, r.Defaults())
-				if err != nil || resolved.EmSize != red.EmSize {
-					t.Fatalf("projection lost typography: %+v %v", resolved, err)
-				}
-			}
-			text, bindings, err := r.ItemizePolicy(context.Background(), "fi", spans, policy)
-			if err != nil || len(bindings) != want {
-				t.Fatalf("itemization: %+v %v", bindings, err)
-			}
-			for _, pos := range []uint64{0, 1} {
-				value, _, err := text.StyleAt(pos)
-				if err != nil {
-					t.Fatal(err)
-				}
-				assertColorFree(t, value)
-			}
-		})
-	}
-	// Legacy must not introduce boundaries between identical input styles.
+			assertColorFree(t, value)
+		}
+	})
+
+	// Identical source styles also coalesce.
 	spans[1].Style = red
-	_, bindings, err := r.ItemizePolicy(context.Background(), "fi", spans, typography.LegacyStyleBoundary)
+	_, bindings, err := r.Itemize(context.Background(), "fi", spans)
 	if err != nil || len(bindings) != 1 {
-		t.Fatalf("identical legacy styles split: %+v %v", bindings, err)
+		t.Fatalf("identical styles split: %+v %v", bindings, err)
 	}
 }
 
@@ -87,7 +82,7 @@ func TestRenderingBypassKeepsFeatureDomainsWithoutColor(t *testing.T) {
 	spans := []style.Span{{Start: 0, End: 4, Style: red}, {Start: 4, End: 8, Style: blue}}
 	defaults := r.Defaults()
 	defaults.Features = []contracts.ShapeFeature{{Tag: [4]byte{'t', 'e', 's', 't'}, Enabled: true, Start: 2, End: 4}}
-	projected, err := typography.ProjectStyles("fifififi", spans, r, defaults, typography.GlyphBoundary)
+	projected, err := typography.ProjectStyles("fifififi", spans, r, defaults)
 	if err != nil || len(projected) != 2 {
 		t.Fatalf("feature domains merged: %+v %v", projected, err)
 	}
@@ -102,7 +97,7 @@ func TestRenderingBypassKeepsFeatureDomainsWithoutColor(t *testing.T) {
 	}
 	// Removing a color difference must not remove a feature-domain boundary.
 	spans[1].Style.Color = "red"
-	again, err := typography.ProjectStyles("fifififi", spans, r, defaults, typography.GlyphBoundary)
+	again, err := typography.ProjectStyles("fifififi", spans, r, defaults)
 	if err != nil || !reflect.DeepEqual(projected, again) {
 		t.Fatalf("color determined feature-domain identity: %+v %v", again, err)
 	}

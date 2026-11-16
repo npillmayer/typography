@@ -30,66 +30,66 @@ func TestItemizeInlineFeatureLigatureAndSourceCoordinates(t *testing.T) {
 	defaults := r.Defaults()
 	defaults.Features = []contracts.ShapeFeature{{Tag: [4]byte{'t', 'e', 's', 't'}, Enabled: true, Start: 3, End: 5}}
 	anchors := []contracts.AtomicAnchor{{ID: 13, ByteOffset: 2}}
-	for _, policy := range []typography.PaintPolicy{typography.GlyphBoundary, typography.LegacyStyleBoundary} {
-		for _, explicit := range []bool{false, true} {
-			var spans []style.Span
-			if explicit {
-				spans = []style.Span{{Start: 0, End: 7, Style: style.Style{EmSize: defaults.EmSize, Language: "en"}}}
-			}
-			text, _, err := r.ItemizeInline(t.Context(), "fi\uFFFCfi", spans, anchors, policy)
+
+	for _, explicit := range []bool{false, true} {
+		var spans []style.Span
+		if explicit {
+			spans = []style.Span{{Start: 0, End: 7, Style: style.Style{EmSize: defaults.EmSize, Language: "en"}}}
+		}
+		text, _, err := r.ItemizeInline(t.Context(), "fi\uFFFCfi", spans, anchors)
+		if err != nil {
+			t.Fatal(err)
+		}
+		para, err := styled.ParagraphFromText(&text, 0, text.Raw().Len(), bidi.LeftToRight, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		owner := khipu.NewKhipukamayuq(khipu.Config{Streaming: &khipu.StreamingConfig{Resolver: r, Defaults: defaults, NewShaper: func() (contracts.StreamingShaper, error) { return NewStream(8) }}})
+		prepared, err := owner.PrepareParagraph(t.Context(), khipu.ParagraphInput{Paragraph: para, Atomics: anchors}, khipu.PrepareOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, engine := range []string{"firstfit", "knuthplass"} {
+			knots, err := owner.BindParagraph(t.Context(), prepared, []khipu.AtomicAdvance{{ID: 13, Advance: 4 * dimen.BP}})
 			if err != nil {
 				t.Fatal(err)
 			}
-			para, err := styled.ParagraphFromText(&text, 0, text.Raw().Len(), bidi.LeftToRight, nil)
+			layout := firstfit.DefaultLayout(linebreak.RectangularParShape(100 * dimen.BP))
+			var breaks []int
+			if engine == "firstfit" {
+				breaks, err = firstfit.BreakParagraph(knots, layout, nil)
+			} else {
+				breaks, err = knuthplass.BreakParagraph(knots, layout, nil)
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			owner := khipu.NewKhipukamayuq(khipu.Config{Streaming: &khipu.StreamingConfig{Resolver: r, Defaults: defaults, NewShaper: func() (contracts.StreamingShaper, error) { return NewStream(8) }}})
-			prepared, err := owner.PrepareParagraph(t.Context(), khipu.ParagraphInput{Paragraph: para, Atomics: anchors}, khipu.PrepareOptions{})
+			frozen, err := owner.Freeze(t.Context(), knots, breaks, layout)
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, engine := range []string{"firstfit", "knuthplass"} {
-				knots, err := owner.BindParagraph(t.Context(), prepared, []khipu.AtomicAdvance{{ID: 13, Advance: 4 * dimen.BP}})
-				if err != nil {
-					t.Fatal(err)
-				}
-				layout := firstfit.DefaultLayout(linebreak.RectangularParShape(100 * dimen.BP))
-				var breaks []int
-				if engine == "firstfit" {
-					breaks, err = firstfit.BreakParagraph(knots, layout, nil)
-				} else {
-					breaks, err = knuthplass.BreakParagraph(knots, layout, nil)
-				}
-				if err != nil {
-					t.Fatal(err)
-				}
-				frozen, err := owner.Freeze(t.Context(), knots, breaks, layout)
-				if err != nil {
-					t.Fatal(err)
-				}
-				var ids, clusters []uint32
-				objects := 0
-				for i := 0; i < frozen.KnotCount(); i++ {
-					if id, ok := frozen.Atomic(i); ok {
-						objects++
-						knot, _ := frozen.Knot(i)
-						if id != 13 || knot.Source.Bytes != (khipu.ByteRange{Start: 2, End: 5}) || knot.Source.ScalarStart != 2 {
-							t.Fatal("object coordinates changed", id, knot)
-						}
-					}
-					if tx, ok := frozen.CopyText(i); ok {
-						for _, g := range tx.Glyphs {
-							ids, clusters = append(ids, g.GlyphID), append(clusters, g.Cluster)
-						}
+			var ids, clusters []uint32
+			objects := 0
+			for i := 0; i < frozen.KnotCount(); i++ {
+				if id, ok := frozen.Atomic(i); ok {
+					objects++
+					knot, _ := frozen.Knot(i)
+					if id != 13 || knot.Source.Bytes != (khipu.ByteRange{Start: 2, End: 5}) || knot.Source.ScalarStart != 2 {
+						t.Fatal("object coordinates changed", id, knot)
 					}
 				}
-				if objects != 1 || !slices.Equal(ids, []uint32{4, 5, 6}) || !slices.Equal(clusters, []uint32{0, 1, 3}) {
-					t.Fatalf("%s %s explicit=%v: objects=%d glyphs=%v clusters=%v", policy, engine, explicit, objects, ids, clusters)
+				if tx, ok := frozen.CopyText(i); ok {
+					for _, g := range tx.Glyphs {
+						ids, clusters = append(ids, g.GlyphID), append(clusters, g.Cluster)
+					}
 				}
+			}
+			if objects != 1 || !slices.Equal(ids, []uint32{4, 5, 6}) || !slices.Equal(clusters, []uint32{0, 1, 3}) {
+				t.Fatalf("%s %s explicit=%v: objects=%d glyphs=%v clusters=%v", "glyph-boundary", engine, explicit, objects, ids, clusters)
 			}
 		}
 	}
+
 	if defaults.Features[0].Start != 3 || defaults.Features[0].End != 5 {
 		t.Fatal("feature defaults mutated")
 	}

@@ -6,16 +6,6 @@ import (
 	"reflect"
 )
 
-// PaintPolicy selects shaping compatibility, not a change to document equality.
-type PaintPolicy string
-
-const (
-	// GlyphBoundary coalesces equivalent typography across paint changes.
-	GlyphBoundary       PaintPolicy = "glyph-boundary-v1"
-	// LegacyStyleBoundary preserves document style boundaries for old replay.
-	LegacyStyleBoundary PaintPolicy = "style-boundary-v1"
-)
-
 // CoalesceStyles resolves adjacent spans before grouping them for shaping.
 // Paint is retained separately by callers. Bidi direction/isolation metadata is
 // still significant; actual bidi intersections are performed by cords/khipu.

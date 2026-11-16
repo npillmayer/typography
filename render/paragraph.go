@@ -23,14 +23,13 @@ type Services struct {
 
 // ParagraphInput borrows completed immutable placements and frozen content.
 // Text and Paint address the same processed UTF-8 stream used for layout.
-// GlyphBoundary is the default; LegacyStyleBoundary supports existing replay.
+// Each glyph receives the paint at its retained logical source anchor.
 // Keep the input and service implementations stable during this call.
 type ParagraphInput struct {
-	Frozen      *khipu.FrozenKhipu
-	VList       *paragraph.VList
-	Text        string
-	Paint       []typography.PaintSpan
-	PaintPolicy typography.PaintPolicy
+	Frozen *khipu.FrozenKhipu
+	VList  *paragraph.VList
+	Text   string
+	Paint  []typography.PaintSpan
 }
 
 // Glyph holds physical drawing order and original source correspondence.
@@ -38,7 +37,7 @@ type ParagraphInput struct {
 // Path uses font units with downward Y.
 type Glyph struct {
 	Line, Knot       int
-	SourceByte       uint64 // original UTF-8 anchor; legacy paint uses the knot's start byte
+	SourceByte       uint64 // original UTF-8 anchor
 	GlyphID, Cluster uint32
 	X, Y, Scale      float64
 	Color, Path      string
@@ -149,16 +148,13 @@ func (p *ParagraphProof) appendText(ctx context.Context, input ParagraphInput, s
 	if err != nil {
 		return err
 	}
-	color, err := proofColor(input.Paint, knot.Source.Bytes.Start)
-	if err != nil {
+	// Validate paint before invoking ordering/outline services, preserving failure precedence.
+	if _, err := proofColor(input.Paint, knot.Source.Bytes.Start); err != nil {
 		return err
 	}
-	var sources map[uint32]uint64
-	if input.PaintPolicy != typography.LegacyStyleBoundary {
-		sources, err = PaintSources(input.Text, knot, t)
-		if err != nil {
-			return err
-		}
+	sources, err := PaintSources(input.Text, knot, t)
+	if err != nil {
+		return err
 	}
 	scale := t.Context.Scale.ToDU(1) / float64(dimen.BP)
 	if math.IsNaN(scale) || math.IsInf(scale, 0) || scale <= 0 {
@@ -174,13 +170,10 @@ func (p *ParagraphProof) appendText(ctx context.Context, input ParagraphInput, s
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		source := knot.Source.Bytes.Start
-		if sources != nil {
-			source = sources[g.Cluster]
-			color, err = proofColor(input.Paint, source)
-			if err != nil {
-				return err
-			}
+		source := sources[g.Cluster]
+		color, err := proofColor(input.Paint, source)
+		if err != nil {
+			return err
 		}
 		gx, gy := penX+float64(g.XOffset)*scale, penY-float64(g.YOffset)*scale
 		glyph := Glyph{Line: origin.Line, Knot: origin.Knot, SourceByte: source, GlyphID: g.GlyphID, Cluster: g.Cluster, X: gx, Y: gy, Scale: scale, Color: color, FaceSHA256: identity.SHA256}

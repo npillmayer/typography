@@ -43,23 +43,24 @@ covered by application tests. The upstream read allocates before the resource bo
 providers must remain trusted and offline.
 OpenType Services owns retained identity, outline-to-path conversion and VisualOrder.
 Generic proof consumers use IdentityProvider/render.Backend, never concrete faces.
-No backend services are serialized. Tytui's static pre-step-5 manifests protect
-version-1 compatibility; do not regenerate them to accommodate accidental changes.
+No backend services are serialized. Current replay controls protect output;
+historical pre-step manifests remain unchanged as version-rejection cases.
 
-Itemize defaults to GlyphBoundary; ItemizePolicy retains LegacyStyleBoundary for
-version-1 replay. Never redefine document equality to drop paint. Shared anchors
-inherit cluster paint, distinct mark anchors may differ. PaintSources maps only the
-known explicit-soft-hyphen generated-text policy; unknown edits require provenance.
-Tytui defaults to replay version 2 for glyph-boundary compatibility layouts, uses
-version 3 for explicit line-height and preserves version-1 legacy behavior.
-Keep the pre-step6-paint fixture unchanged and run both modules' full suites.
+Itemize and ItemizeInline always coalesce equivalent shaping across paint changes.
+ProjectStyles takes text, spans, resolver and defaults, with no policy argument.
+PaintPolicy, GlyphBoundary, LegacyStyleBoundary and ItemizePolicy are removed.
+Shared anchors inherit cluster paint; distinct mark anchors may differ. PaintSources
+maps the supported explicit-soft-hyphen transformations; unknown edits require
+provenance. No paint enters styled.Text. Tytui replay accepts only version 4;
+historical formats are rejected. Preserve current proof/placement controls and
+run both modules' full suites.
 
 ## Styles and paint
 
 The root resolver owns `ProjectStyles`, producing `TypographySpan` values with
 color-free `TypographyStyle` styles. The private run-domain identity preserves
-relative feature origins and explicit legacy document boundaries without carrying
-paint through styled.Text. Itemize/ItemizePolicy use the same projection and their
+relative feature origins without carrying paint through styled.Text. Itemize and
+ItemizeInline use the same projection rules and their
 internal run styles contain no document Color field. ResolveStyle accepts projected
 styles and legacy document Style inputs. Keep document equality and JSON unchanged.
 The application retains `PaintSpan` values separately for rendering; tytui's
@@ -73,10 +74,9 @@ face/resource wrappers. Fontselection.Selection carries SelectedFonts and detach
 application Provenance; the resolver's Snapshot is *typography.SelectedFonts.
 Root path-bearing Settings/Rule, LoadSettings, FaceLoader/LoadFunc and the loader
 Services bundle are retired. Replay owns explicit input/policy/descriptor/font
-wire records; preserve numeric provenance codes, Fonts:null and unchanged v1/v2/v3
-fixtures. Load validates every stored font but only passes referenced faces to the
+wire records; preserve numeric provenance codes, Fonts:null and current controls. Load validates every stored font but only passes referenced faces to the
 resolver. Requested paths/descriptors are never executable on replay; retain the
-existing normalized requested-path resave behavior.
+requested-path provenance through load/save, without discovery.
 Run the generic-package dependency audit and adapter service regressions alongside
 both modules' ordinary/race/build/vet checks. Keep annotation APIs outside this boundary.
 
@@ -91,11 +91,11 @@ references; no paint, backend or DOM types enter assembly. Reject non-finite and
 out-of-domain geometry rather than narrowing/wrapping integer DU. Empty frozen
 output has no baseline; glyph ink may overflow logical boxes. No target-height or
 stretch/shrink semantics are implemented. Tytui retains vlist placements and uses them without querying line metrics.
-Preserve existing v1/v2 proof evidence and keep rendering colors outside assembly.
+Preserve current proof evidence and keep rendering colors outside assembly.
 Owning tests cover synthetic baselines, mixed sizes, blank lines, overflow,
 invalid metrics, cancellation and concurrent ownership. Tytui checks real
 mixed-size/fallback placement/rendering, independent synthetic LTR/RTL positions,
-source correspondence, input/source-removal stability and unchanged legacy resaves.
+source correspondence, input/source-removal stability and current-format resaves.
 Keep compatibility spacing defaults unchanged.
 
 paragraph.Run owns text-only bidi preparation and encode/break/freeze
@@ -133,13 +133,12 @@ height packing are unsupported. Prepared layout accepts fixed atomic border
 boxes (already including padding/borders), resolved margins and bottom-margin-edge
 alignment; do not confuse this with general CSS box computation. Rendering colors and ink bounds remain separate.
 Tytui's headless Input.LineLayout opts in; TUI defaults stay compatible. Replay
-v1/v2 omit the new fields and retain old evidence. Explicit line-height cases use
-v3 with typed input and numeric placements, no services or VList objects. Both
-paint policies remain independent of layout. Owning tests cover exact geometry,
+v4 records explicit assembly mode and placements for both backends; no services
+or VList objects are serialized. Color bypass remains independent of layout. Owning tests cover exact geometry,
 inheritance/strut, mixed fonts/sizes, zero/negative leading, spaces/replacements,
 invalid values/metrics/ranges, cancellation and overflow. Tytui tests ligatures,
-RTL/fallback/paint, rendering without metrics, and offline v3 resaves/tampering
-alongside unchanged legacy fixtures.
+RTL/fallback/paint, rendering without metrics, and offline v4 resaves/tampering
+alongside unchanged current controls.
 
 
 ## Inline objects and reusable preparation
@@ -219,9 +218,8 @@ once per detached directional glyph fragment; frozen knot order stays physical.
 Errors/cancellation, including late outline failures, return no partial proof.
 Keep font/scale services stable and CSS/DOM transforms in tytui/documentlayout.
 
-Put general regressions in owning packages. Preserve static pre-step-5,
-pre-step6-paint and v1/v2/v3 replay fixtures; never regenerate them to conceal
-compatibility drift. Keep numeric provenance codes and versioned DTOs in replay.
+Put general regressions in owning packages. Preserve current replay proof controls
+and static historical rejection fixtures; never regenerate them to conceal drift. Keep numeric provenance codes and versioned DTOs in replay.
 No backend services or VList objects are serialized. Do not reintroduce removed
 tytui internal/layout forwarding code or application face/resource wrappers.
 
@@ -234,3 +232,11 @@ domains here; tytui owns nested scheduling, source correspondence, rounding,
 resize/lifetime, retained document proofs and replay compatibility integration.
 Report checks actually run; historical passing results are not current validation.
 Do not commit or push for the user.
+
+Replay simplification is complete (2026-11-16). The application supports only
+experimental version 4; font identity encoding is unchanged and independent of
+manifest-version support. Historical manifests are rejection cases, not executable
+compatibility modes. Current glyph/placement controls and immutable resources
+remain contracts. See [tytui offline replay](../tytui/doc/OFFLINE_REPLAY.md) for
+case creation and deliberate evidence review. No automatic fixture update or
+permanent format migration framework is provided.

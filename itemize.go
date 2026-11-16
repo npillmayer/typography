@@ -11,14 +11,13 @@ import (
 
 // runStyle is a value identity: no mutable font pointer enters styled.Text.
 type runStyle struct {
-	Legacy             bool
 	Input              TypographyStyle
 	Plain              bool
 	ResourceID, Script string
 	features           featureWindow // Enabled only for mixed-input itemization.
 }
 
-// Equals preserves private feature domains and the selected paint-boundary policy
+// Equals preserves private feature domains
 // while comparing the typography that determines a shaping run.
 func (s runStyle) Equals(other styled.Style) bool {
 	o, ok := other.(runStyle)
@@ -28,9 +27,7 @@ func (s runStyle) Equals(other styled.Style) bool {
 	if s.features != o.features {
 		return false
 	}
-	if s.Legacy || o.Legacy {
-		return s == o
-	}
+
 	return s.Input.domain == o.Input.domain && s.Plain == o.Plain && s.ResourceID == o.ResourceID && s.Script == o.Script && s.Input.Typography.EmSize == o.Input.Typography.EmSize && s.Input.Typography.Language == o.Input.Typography.Language && s.Input.Typography.WhiteSpace == o.Input.Typography.WhiteSpace && s.Input.Typography.Direction == o.Input.Typography.Direction && s.Input.Typography.UnicodeBidi == o.Input.Typography.UnicodeBidi
 }
 
@@ -44,14 +41,8 @@ func (s runStyle) String() string { return fmt.Sprintf("%s %s %s", s.Script, s.R
 // Fallback chooses the first configured face covering an entire grapheme.
 // Soft hyphens inherit the preceding face within the CSS span (the following
 // face at its start). Marker-only spans retain their mapped primary face.
-// GlyphBoundary first coalesces equivalent resolved styles across paint changes;
-// LegacyStyleBoundary preserves the original document boundaries for replay.
+// Equivalent resolved styles coalesce across paint changes.
 func (r *Resolver) Itemize(ctx context.Context, text string, spans []typestyle.Span) (styled.Text, []Binding, error) {
-	return r.ItemizePolicy(ctx, text, spans, GlyphBoundary)
-}
-
-// ItemizePolicy retains the old behavior only for explicit legacy replay.
-func (r *Resolver) ItemizePolicy(ctx context.Context, text string, spans []typestyle.Span, policy PaintPolicy) (styled.Text, []Binding, error) {
 	out := styled.TextFromString(text)
 	if ctx == nil {
 		return out, nil, fmt.Errorf("nil context")
@@ -62,11 +53,8 @@ func (r *Resolver) ItemizePolicy(ctx context.Context, text string, spans []types
 	if err := typestyle.ValidateSpans(text, spans); err != nil {
 		return out, nil, err
 	}
-	if policy != "" && policy != GlyphBoundary && policy != LegacyStyleBoundary {
-		return out, nil, fmt.Errorf("unknown paint policy %q", policy)
-	}
-	legacy := policy == LegacyStyleBoundary
-	projected, err := ProjectStyles(text, spans, r, r.Defaults(), policy)
+
+	projected, err := ProjectStyles(text, spans, r, r.Defaults())
 	if err != nil {
 		return out, nil, err
 	}
@@ -78,7 +66,7 @@ func (r *Resolver) ItemizePolicy(ctx context.Context, text string, spans []types
 	for i, span := range projected {
 		spansForItems[i].TypographySpan = span
 	}
-	return r.itemizeSpans(ctx, text, spansForItems, plain, legacy)
+	return r.itemizeSpans(ctx, text, spansForItems, plain)
 }
 
 type itemizationSpan struct {
@@ -91,10 +79,10 @@ type textItem struct {
 	style      runStyle
 }
 
-// itemizeSpans is shared with the legacy entry point. Mixed input supplies
+// itemizeSpans is shared by text-only and mixed input. Mixed input supplies
 // disjoint text intervals, so grapheme and neighbor analysis never crosses an
 // object. Font coverage/fallback is the existing algorithm, not a new preflight.
-func (r *Resolver) itemizeSpans(ctx context.Context, text string, spans []itemizationSpan, plain, legacy bool) (styled.Text, []Binding, error) {
+func (r *Resolver) itemizeSpans(ctx context.Context, text string, spans []itemizationSpan, plain bool) (styled.Text, []Binding, error) {
 	out := styled.TextFromString(text)
 	boundaries := itemizationBoundaries(text, spans)
 	var items []textItem
@@ -105,7 +93,7 @@ func (r *Resolver) itemizeSpans(ctx context.Context, text string, spans []itemiz
 		if !boundaries[int(span.Start)] || !boundaries[int(span.End)] {
 			return out, nil, fmt.Errorf("style boundary splits a grapheme at [%d,%d)", span.Start, span.End)
 		}
-		local, err := r.itemizeSpan(ctx, text, span, plain, legacy)
+		local, err := r.itemizeSpan(ctx, text, span, plain)
 		if err != nil {
 			return out, nil, err
 		}
@@ -128,7 +116,7 @@ func itemizationBoundaries(text string, spans []itemizationSpan) map[int]bool {
 	boundaries := map[int]bool{0: true}
 	// Analyze each contiguous text island together, including style boundaries.
 	// Only an attached object may force a grapheme boundary; a style change may
-	// not split a cluster. The legacy path remains one intact island.
+	// not split a cluster.
 	for i := 0; i < len(spans); {
 		start, end := spans[i].Start, spans[i].End
 		j := i + 1
@@ -149,7 +137,7 @@ func itemizationBoundaries(text string, spans []itemizationSpan) map[int]bool {
 
 // itemizeSpan selects whole-grapheme faces before inheriting script and soft-hyphen
 // context within this projected span. Private style/feature domains stay intact.
-func (r *Resolver) itemizeSpan(ctx context.Context, text string, span itemizationSpan, plain, legacy bool) ([]textItem, error) {
+func (r *Resolver) itemizeSpan(ctx context.Context, text string, span itemizationSpan, plain bool) ([]textItem, error) {
 	var css styled.Style
 	if !plain {
 		css = span.Style
@@ -184,7 +172,7 @@ func (r *Resolver) itemizeSpan(ctx context.Context, text string, span itemizatio
 				return nil, err
 			}
 		}
-		local = append(local, textItem{start, end, runStyle{Legacy: legacy, Input: span.Style, Plain: plain, ResourceID: chosen, Script: script, features: span.features}})
+		local = append(local, textItem{start, end, runStyle{Input: span.Style, Plain: plain, ResourceID: chosen, Script: script, features: span.features}})
 	}
 	inheritItemScripts(local)
 	inheritSoftHyphenFaces(local, primary)

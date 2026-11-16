@@ -35,39 +35,39 @@ codes preserve version-1 IDs and are distinct from document CSS numeric weights.
 Tytui consumes these packages directly; only versioned font wire records remain
 in its replay package. There are no tytui font/face/resource forwarding wrappers.
 
-Glyph-boundary paint is the default: equivalent resolved typography coalesces
+Glyph-boundary paint is the sole behavior: equivalent resolved typography coalesces
 across paint changes, while original paint spans remain separate. One glyph gets
 one color at its first logical source anchor; shared anchors share color and
 independently anchored marks can differ. No clipping or conflict warnings.
 Feature-bearing domains remain separate for khipu's existing clipping/rebasing.
-Actual font/size/language/bidi boundaries remain significant. LegacyStyleBoundary
-is available explicitly for old replay; document Style.Equals remains complete.
+Actual font/size/language/bidi boundaries remain significant; document
+Style.Equals remains complete. There is no paint-policy selector or legacy mode.
 render.PaintSources maps frozen anchors and the supported explicit-soft-hyphen
 replacements to original bytes, rejecting unknown generated transformations.
 
 Development uses sibling cords, khipu, uax, schuko and opentype checkouts.
 Neutral tests use fake preloaded faces; adapter tests use sibling OpenType font
 fixtures. Tytui additionally needs fontfind for its application selection tests. Run `go test ./...`, `go test -race ./...`, `go build ./...`
-and `go vet ./...`, then tytui suites including static pre-migration replay fixtures.
+and `go vet ./...`, then tytui suites including current replay controls and historical rejection fixtures.
 
-Tytui replay defaults to version 2 for glyph-boundary compatibility layouts;
-explicit line-height uses version 3. Version-1 fixtures keep legacy behavior and identities. Keep tests for ligatures, combining marks,
-RTL/fallback/discretionaries, source maps and original feature-coordinate domains.
+Tytui replay supports experimental version 4 only. It verifies placements in both
+vertical modes; historical formats are rejection cases. Current SVG/placement
+controls and font identities remain unchanged. Keep tests for ligatures, combining
+marks, RTL/fallback/discretionaries, source maps and feature-coordinate domains.
 
 ## Styles, paint and inline itemization
 
 The root resolver owns `ProjectStyles`, producing `TypographySpan` values with
 color-free `TypographyStyle` styles. The private run-domain identity preserves
-relative feature origins and explicit legacy document boundaries without carrying
-paint through styled.Text. Itemize/ItemizePolicy use the same projection and their
+relative feature origins without carrying paint through styled.Text. Itemize and
+ItemizeInline use the same projection rules and their
 internal run styles contain no document Color field. ResolveStyle accepts projected
 styles and legacy document Style inputs. Keep document equality and JSON unchanged.
 The application retains `PaintSpan` values separately for rendering; tytui's
 Result.PaintSpans returns a detached copy. ItemizeWithMetadata remains compatible.
 Typography projection does not change document equality or replay formats.
 
-For mixed inline input, use `Resolver.ItemizeInline(ctx, text, spans, atomics,
-policy)`. Each `contracts.AtomicAnchor` selects one U+FFFC OBJECT REPLACEMENT
+For mixed inline input, use `Resolver.ItemizeInline(ctx, text, spans, atomics)`. Each `contracts.AtomicAnchor` selects one U+FFFC OBJECT REPLACEMENT
 CHARACTER at its original UTF-8 byte offset, with a unique nonzero occurrence ID;
 anchors must be strictly ordered by offset. The same anchors accompany the
 returned styled text in khipu's `ParagraphInput`. Object dimensions are supplied
@@ -126,8 +126,8 @@ from executable references, and replay converts it through explicit wire records
 
 This replaces root `LoadSettings`, `Settings`, `Rule`, `FaceLoader`, `LoadFunc`
 and the loader/coverage `Services` bundle. The old `discovery` and `adapter/fontfind`
-packages have moved to tytui. This is a Go source API change; replay versions
-1, 2 and 3, resource identities and static evidence remain unchanged.
+packages have moved to tytui. This is a Go source API change. Replay now supports only experimental version 4;
+resource identities and current evidence remain unchanged.
 
 General parser/stream/resource/resolver regressions, including feature-range
 and nonzero-cluster-base baselines, live here. Tytui owns selection/provider,
@@ -155,8 +155,7 @@ Coordinates must remain below
 are errors. Tytui retains assembly output in completed results and its glyph
 renderer consumes placements without querying line metrics. Result.VList returns
 a detached handle; font/paint inspection input cannot reflow an existing proof.
-Replay rebuilds placements under the compatibility policy without changing v1/v2
-wire records or evidence. Rendering colors remain on their separate path.
+Replay v4 rebuilds and verifies placements for both assembly policies. Rendering colors remain on their separate path.
 
 
 `paragraph.Run(ctx, input, params, config)` provides prepared styled paragraph
@@ -169,7 +168,7 @@ Result retains Frozen/VList, paragraph-relative break endpoints, bidi runs and
 counts; errors carry the failed stage and return no partial output. Every call
 gets a fresh owner and freezes before assembly. Services must stay valid for
 retained results. Typography-only text and separate renderer paint remain the
-application contract. The compatibility assembly policy preserves replay v1/v2.
+application contract. The compatibility assembly policy preserves existing paragraph proof geometry.
 
 
 ## CSS-inspired line height
@@ -194,13 +193,12 @@ height packing remain outside this engine. Prepared mixed layout supports the
 fixed atomic boxes and resolved margins described below. Rendering colors and
 ink bounds remain separate.
 Tytui's headless Input.LineLayout opts in; TUI defaults stay compatible. Replay
-v1/v2 omit the new fields and retain old evidence. Explicit line-height cases use
-v3 with typed input and numeric placements, no services or VList objects. Both
-paint policies remain independent of layout. Owning tests cover exact geometry,
+v4 records explicit assembly mode and placements for both backends; no services
+or VList objects are serialized. Color bypass remains independent of layout. Owning tests cover exact geometry,
 inheritance/strut, mixed fonts/sizes, zero/negative leading, spaces/replacements,
 invalid values/metrics/ranges, cancellation and overflow. Tytui tests ligatures,
-RTL/fallback/paint, rendering without metrics, and offline v3 resaves/tampering
-alongside unchanged legacy fixtures.
+RTL/fallback/paint, rendering without metrics, and offline v4 resaves/tampering
+alongside unchanged current controls.
 
 ## Reusable preparation and atomic layout
 
@@ -303,13 +301,12 @@ explicit discretionary measurement stays available through this generic API.
 
 ## Retained paragraph proofs
 
-`render.BuildParagraphProof(ctx, render.ParagraphInput{Frozen, VList, Text, Paint,
-PaintPolicy}, render.Services{Backend, Identity})` walks completed immutable
+`render.BuildParagraphProof(ctx, render.ParagraphInput{Frozen, VList, Text, Paint}, render.Services{Backend, Identity})` walks completed immutable
 paragraphs. It returns detached float64 big-point glyph/line geometry, outline
 paths, font identities, colors and original processed UTF-8 `SourceByte` anchors.
-`PaintPolicy` defaults to glyph-boundary paint; explicit legacy paint preserves
-existing replay behavior. Both paragraph and document proof consumers in tytui
-use this walker. CSS/DOM transforms remain in `tytui/documentlayout`.
+Glyph color always comes from the retained logical source anchor through PaintSources.
+No policy selector remains on ParagraphInput. Keep fonts and scale services stable
+and paint separate from shaping; proof construction does not remeasure or reflow.
 
 Proof construction never measures lines, loads fonts, reshapes, rebreaks or stacks
 lines. Visual ordering applies once to each detached directional glyph fragment;
@@ -340,3 +337,11 @@ There is no cross-invocation cache or speculative final callback. Automatic
 intrinsic hyphenation and successive explicit splitting are unsupported; bounded
 explicit splitting is not general CSS min-content/hyphenation conformance. Glyph
 coverage stays caller-owned; relocating existing itemizer checks is future work.
+
+Replay simplification is complete (2026-11-16). The application supports only
+experimental version 4; font identity encoding is unchanged and independent of
+manifest-version support. Historical manifests are rejection cases, not executable
+compatibility modes. Current glyph/placement controls and immutable resources
+remain contracts. See [tytui offline replay](../tytui/doc/OFFLINE_REPLAY.md) for
+case creation and deliberate evidence review. No automatic fixture update or
+permanent format migration framework is provided.

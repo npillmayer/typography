@@ -10,18 +10,19 @@ import (
 
 // TypographyStyle is M's projection of a document style for the typesetter.
 // It contains no paint. The private domain preserves relative feature origins
-// and, only for legacy replay, original document-style boundaries.
+// across shaping fragments.
 type TypographyStyle struct {
 	Typography style.Typography
 	domain     uint64
 }
 
 // Equals compares typography and the private run domain, including boundaries
-// needed to preserve feature origins and legacy replay.
+// needed to preserve feature origins.
 func (s TypographyStyle) Equals(other styled.Style) bool {
 	o, ok := other.(TypographyStyle)
 	return ok && s == o
 }
+
 // String returns diagnostic typography and run-domain information.
 func (s TypographyStyle) String() string { return fmt.Sprintf("%+v domain=%d", s.Typography, s.domain) }
 
@@ -35,40 +36,32 @@ type TypographySpan struct {
 // rendering properties separately. Nil spans preserve unstyled/default input.
 // Projection owns both coalescing and required run boundaries; callers must use
 // the returned Style values, not rebuild them from their Typography fields.
-func ProjectStyles(text string, spans []style.Span, resolver contracts.StyleResolver, defaults contracts.ResolvedRunStyle, policy PaintPolicy) ([]TypographySpan, error) {
+func ProjectStyles(text string, spans []style.Span, resolver contracts.StyleResolver, defaults contracts.ResolvedRunStyle) ([]TypographySpan, error) {
 	if err := style.ValidateSpans(text, spans); err != nil {
 		return nil, err
 	}
-	if policy != "" && policy != GlyphBoundary && policy != LegacyStyleBoundary {
-		return nil, fmt.Errorf("unknown paint policy %q", policy)
-	}
+
 	if spans == nil {
 		return nil, nil
 	}
 	if resolver == nil {
 		return nil, fmt.Errorf("style projection requires a resolver")
 	}
-	legacy := policy == LegacyStyleBoundary
-	if !legacy {
-		var err error
-		spans, err = CoalesceStyles(text, spans, resolver, defaults)
-		if err != nil {
-			return nil, err
-		}
+
+	var err error
+	spans, err = CoalesceStyles(text, spans, resolver, defaults)
+	if err != nil {
+		return nil, err
 	}
+
 	out := make([]TypographySpan, 0, len(spans))
 	var domain uint64
-	for i, span := range spans {
+	for _, span := range spans {
 		resolved, err := resolver.ResolveStyle(span.Style, defaults)
 		if err != nil {
 			return nil, err
 		}
-		if legacy {
-			// Identical adjacent source styles historically shared a run.
-			if i > 0 && spans[i-1].Style != span.Style {
-				domain = span.Start + 1
-			}
-		} else if len(resolved.Features) > 0 {
+		if len(resolved.Features) > 0 {
 			domain = span.Start + 1
 		} else {
 			domain = 0

@@ -25,14 +25,14 @@ import (
 // Glyph coverage is the caller's responsibility. This adds no validation pass:
 // ordinary text uses the existing itemizer's coverage/fallback behavior, pending
 // its separate relocation. Attached markers bypass style resolution and coverage.
-// With no anchors this delegates to ItemizePolicy for text-only compatibility.
+// With no anchors this delegates to Itemize for text-only compatibility.
 func (r *Resolver) ItemizeInline(ctx context.Context, text string, spans []typestyle.Span,
-	atomics []contracts.AtomicAnchor, policy PaintPolicy) (styled.Text, []Binding, error) {
+	atomics []contracts.AtomicAnchor) (styled.Text, []Binding, error) {
 	if !utf8.ValidString(text) {
 		return styled.TextFromString(""), nil, fmt.Errorf("%w: invalid UTF-8", contracts.ErrIllegalArguments)
 	}
 	if len(atomics) == 0 {
-		out, bindings, err := r.ItemizePolicy(ctx, text, spans, policy)
+		out, bindings, err := r.Itemize(ctx, text, spans)
 		if err != nil {
 			return styled.TextFromString(text), nil, err
 		}
@@ -51,17 +51,15 @@ func (r *Resolver) ItemizeInline(ctx context.Context, text string, spans []types
 	if err := typestyle.ValidateSpans(text, spans); err != nil {
 		return out, nil, fmt.Errorf("%w: %w", contracts.ErrIllegalArguments, err)
 	}
-	if policy != "" && policy != GlyphBoundary && policy != LegacyStyleBoundary {
-		return out, nil, fmt.Errorf("%w: unknown paint policy %q", contracts.ErrIllegalArguments, policy)
-	}
+
 	if err := validateAtomicAnchors(text, atomics); err != nil {
 		return out, nil, err
 	}
-	projected, err := r.projectInlineSpans(ctx, text, spans, atomics, policy)
+	projected, err := r.projectInlineSpans(ctx, text, spans, atomics)
 	if err != nil {
 		return out, nil, err
 	}
-	result, bindings, err := r.itemizeSpans(ctx, text, projected, spans == nil, policy == LegacyStyleBoundary)
+	result, bindings, err := r.itemizeSpans(ctx, text, projected, spans == nil)
 	if err != nil {
 		return out, nil, err
 	}
@@ -86,7 +84,7 @@ func validateAtomicAnchors(text string, atomics []contracts.AtomicAnchor) error 
 // with text prevents object-only styles from requiring a usable font/language.
 // Coalescing follows the same shaping/paint rules as ProjectStyles; a skipped
 // object-only span is a barrier, never a bridge between unrelated domains.
-func (r *Resolver) projectInlineSpans(ctx context.Context, text string, spans []typestyle.Span, atomics []contracts.AtomicAnchor, policy PaintPolicy) ([]itemizationSpan, error) {
+func (r *Resolver) projectInlineSpans(ctx context.Context, text string, spans []typestyle.Span, atomics []contracts.AtomicAnchor) ([]itemizationSpan, error) {
 	var groups []TypographySpan
 	if spans == nil {
 		groups = []TypographySpan{{Start: 0, End: uint64(len(text))}}
@@ -113,11 +111,9 @@ func (r *Resolver) projectInlineSpans(ctx context.Context, text string, spans []
 				return nil, err
 			}
 			merge := len(groups) > 0 && groups[len(groups)-1].End == span.Start
-			if policy == LegacyStyleBoundary {
-				merge = merge && span.Style == previousStyle
-			} else {
-				merge = merge && sameShaping(previous, resolved) && span.Style.Direction == previousStyle.Direction && span.Style.UnicodeBidi == previousStyle.UnicodeBidi
-			}
+
+			merge = merge && sameShaping(previous, resolved) && span.Style.Direction == previousStyle.Direction && span.Style.UnicodeBidi == previousStyle.UnicodeBidi
+
 			if merge {
 				groups[len(groups)-1].End = span.End
 			} else {
