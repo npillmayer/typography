@@ -15,6 +15,15 @@ import (
 // assembleLineHeight measures the strut, source styles and frozen lines in that
 // order. Only a fully assembled, cancellation-checked vlist is published.
 func assembleLineHeight(ctx context.Context, f *khipu.FrozenKhipu, l *LineLayout, text styled.Text, cfg khipu.Config, atomics map[contracts.AtomicID]AtomicBox) (*VList, error) {
+	// The caller supplies CSS-processed text. An empty source has no text,
+	// preserved whitespace/newline, or atomic content, so it creates no line.
+	// Keep the frozen diagnostic result, but do not turn its final fill into a strut.
+	if text.Raw().Len() == 0 && len(atomics) == 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return &VList{frozen: f}, nil
+	}
 	strut, err := cssFaceMetrics(cfg.Streaming.Defaults)
 	if err != nil {
 		return nil, err

@@ -14,7 +14,9 @@ import (
 )
 
 // CSSLineHeight stacks baseline-aligned line boxes with a paragraph strut and
-// half-leading. Unlike ProofCompatibility, it adds no interline/trailing kern.
+// half-leading. Empty processed text produces no line or strut. Whitespace
+// processing belongs to the caller; nonempty preserved whitespace remains content.
+// Unlike ProofCompatibility, it adds no interline/trailing kern.
 const CSSLineHeight SpacingPolicy = "css-line-height-v1"
 
 // LineHeightKind selects font metrics, an em multiplier or a resolved DU length.

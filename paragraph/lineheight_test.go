@@ -216,7 +216,7 @@ func TestLineHeightValidationAndEmpty(t *testing.T) {
 	}
 	p = cssParams(paragraph.FirstFit, factor(1))
 	out, err := paragraph.Run(t.Context(), paragraph.Input{}, p, cfg)
-	if err != nil || out.VList.Box().Extent != 10 || !out.VList.Box().HasBaseline {
+	if err != nil || out.VList.Box().Extent != 0 || out.VList.Box().HasBaseline || len(out.VList.Lines()) != 0 {
 		t.Fatal("empty", out, err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -401,5 +401,27 @@ func (s metricStream) CheckFace(face contracts.FontFace) error {
 		return s.SyntheticStreamingShaper.CheckFace(f.FontFace)
 	default:
 		return s.SyntheticStreamingShaper.CheckFace(face)
+	}
+}
+
+func TestCSSEmptyLinesAndPreservedContent(t *testing.T) {
+	for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
+		for _, source := range []string{"", " ", "\n", "\u00a0"} {
+			p := cssParams(breaker, factor(3))
+			out, err := paragraph.Run(t.Context(), paragraph.Input{Text: styled.TextFromString(source)}, p, synthetic())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out.VList.Frozen() != out.Frozen {
+				t.Fatal("lost retained frozen identity")
+			}
+			if source == "" {
+				if len(out.VList.Lines()) != 0 || out.VList.Box().Extent != 0 || out.VList.Box().HasBaseline {
+					t.Fatal("empty source acquired a CSS strut")
+				}
+			} else if len(out.VList.Lines()) == 0 {
+				t.Fatalf("nonempty preserved source %q lost its line", source)
+			}
+		}
 	}
 }
