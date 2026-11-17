@@ -39,7 +39,7 @@ func TestSelectedCoverageAcceptanceOrderAndFailure(t *testing.T) {
 					return 0, nil
 				},
 			}
-			got, err := glyphing.NewResolver(ctx, fonts, coverage)
+			got, err := glyphing.NewStyleMapper(ctx, fonts, coverage)
 			switch mode {
 			case "success":
 				if err != nil || got == nil || !reflect.DeepEqual(names, []string{"primary", "rule", "fallback"}) || len(got.Snapshot().Fallbacks) != 2 {

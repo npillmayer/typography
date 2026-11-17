@@ -82,7 +82,7 @@ file/resource requests or family requests
     -> tytui/fontselection + fontfind where needed
     -> OpenType load of the selected bytes
     -> selected FaceEntry vector + mapping/fallback references + provenance
-    -> typography.NewResolver
+    -> typography.NewStyleMapper
     -> itemization -> paragraph/khipu -> retained rendering
 ```
 
@@ -111,8 +111,8 @@ type SelectedRule struct {
     ResourceID string
 }
 
-func NewResolver(ctx context.Context, fonts SelectedFonts, coverage Coverage) (*Resolver, error)
-func (r *Resolver) Snapshot() *SelectedFonts
+func NewStyleMapper(ctx context.Context, fonts SelectedFonts, coverage Coverage) (*StyleMapper, error)
+func (r *StyleMapper) Snapshot() *SelectedFonts
 ```
 
 This is a selected set with explicit roles, not a search catalog. Specify these
@@ -134,7 +134,7 @@ contracts:
    Validate each nonnil face/resource and the existing metadata consistency rules:
    ID, SHA256, origin and `Info.Path == Origin.Location`. Keep rule validation.
    Metadata paths are descriptive only; the resolver must not open them.
-5. `NewResolver` performs no provider calls, file I/O, font parsing, shaping or
+5. `NewStyleMapper` performs no provider calls, file I/O, font parsing, shaping or
    coverage preflight. The loader remains responsible for the face matching the
    retained bytes; the generic constructor cannot inspect a concrete parser.
    Preserve context checks during validation and before publication.
@@ -146,7 +146,7 @@ contracts:
    Cmap errors remain terminal and missing coverage remains an error. Do not
    relocate existing coverage checks or add dynamic discovery during itemization.
 
-`Info`, `Binding`, `IdentityProvider`, `FontSource` and the existing font/scale
+`Info`, `FontTextRun`, `IdentityProvider`, `FontSource` and the existing font/scale
 contracts remain. `SelectedFonts` is a runtime value, not a JSON or replay DTO.
 No parsed-font accessor is introduced.
 
@@ -335,7 +335,7 @@ expected evidence, or relax tamper checks to make the migration pass.
    types while the current implementation still exists. Require identical wire
    output for equivalent input and unchanged offline replay before proceeding.
 3. **Add selected-font construction.** Implement `SelectedFonts`, `SelectedRule`,
-   detached cloning/snapshot and `NewResolver`. Keep a temporary old-entry bridge
+   detached cloning/snapshot and `NewStyleMapper`. Keep a temporary old-entry bridge
    if necessary, and compare old/new itemization with fake services and real fonts.
    Avoid changing the recently refactored itemization/assembly/render algorithms.
 4. **Move selection policy to tytui.** Move discovery/provider regressions with

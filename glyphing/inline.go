@@ -14,7 +14,7 @@ import (
 // have unique nonzero IDs, strictly increasing byte offsets, and select exactly
 // one U+FFFC OBJECT REPLACEMENT CHARACTER each. Unattached U+FFFC remains text.
 // Original bytes/scalar positions are preserved. Attached markers stay unstyled
-// and have no Binding; pass the same anchors to khipu's paragraph preparation.
+// and have no FontTextRun; pass the same anchors to khipu's paragraph preparation.
 // Text spans retain their projected feature domains across object, script and
 // fallback splits. ResolveStyle clips late-supplied features to each fragment;
 // callers must retain the returned styles rather than reconstructing them.
@@ -26,8 +26,8 @@ import (
 // ordinary text uses the existing itemizer's coverage/fallback behavior, pending
 // its separate relocation. Attached markers bypass style resolution and coverage.
 // With no anchors this delegates to Itemize for text-only compatibility.
-func (r *Resolver) ItemizeInline(ctx context.Context, text string, spans []typestyle.Span,
-	atomics []contracts.AtomicAnchor) (styled.Text, []Binding, error) {
+func (r *StyleMapper) ItemizeInline(ctx context.Context, text string, spans []typestyle.Span,
+	atomics []contracts.AtomicAnchor) (styled.Text, []FontTextRun, error) {
 	if !utf8.ValidString(text) {
 		return styled.TextFromString(""), nil, fmt.Errorf("%w: invalid UTF-8", contracts.ErrIllegalArguments)
 	}
@@ -84,7 +84,7 @@ func validateAtomicAnchors(text string, atomics []contracts.AtomicAnchor) error 
 // with text prevents object-only styles from requiring a usable font/language.
 // Coalescing follows the same shaping/paint rules as ProjectStyles; a skipped
 // object-only span is a barrier, never a bridge between unrelated domains.
-func (r *Resolver) projectInlineSpans(ctx context.Context, text string, spans []typestyle.Span, atomics []contracts.AtomicAnchor) ([]itemizationSpan, error) {
+func (r *StyleMapper) projectInlineSpans(ctx context.Context, text string, spans []typestyle.Span, atomics []contracts.AtomicAnchor) ([]itemizationSpan, error) {
 	var groups []TypographySpan
 	if spans == nil {
 		groups = []TypographySpan{{Start: 0, End: uint64(len(text))}}

@@ -43,7 +43,7 @@ func (s runStyle) String() string { return fmt.Sprintf("%s %s %s", s.Script, s.R
 // Soft hyphens inherit the preceding face within the CSS span (the following
 // face at its start). Marker-only spans retain their mapped primary face.
 // Equivalent resolved styles coalesce across paint changes.
-func (r *Resolver) Itemize(ctx context.Context, text string, spans []typestyle.Span) (styled.Text, []Binding, error) {
+func (r *StyleMapper) Itemize(ctx context.Context, text string, spans []typestyle.Span) (styled.Text, []FontTextRun, error) {
 	out := styled.TextFromString(text)
 	if ctx == nil {
 		return out, nil, fmt.Errorf("nil context")
@@ -83,7 +83,7 @@ type textItem struct {
 // itemizeSpans is shared by text-only and mixed input. Mixed input supplies
 // disjoint text intervals, so grapheme and neighbor analysis never crosses an
 // object. Font coverage/fallback is the existing algorithm, not a new preflight.
-func (r *Resolver) itemizeSpans(ctx context.Context, text string, spans []itemizationSpan, plain bool) (styled.Text, []Binding, error) {
+func (r *StyleMapper) itemizeSpans(ctx context.Context, text string, spans []itemizationSpan, plain bool) (styled.Text, []FontTextRun, error) {
 	out := styled.TextFromString(text)
 	boundaries := itemizationBoundaries(text, spans)
 	var items []textItem
@@ -138,7 +138,7 @@ func itemizationBoundaries(text string, spans []itemizationSpan) map[int]bool {
 
 // itemizeSpan selects whole-grapheme faces before inheriting script and soft-hyphen
 // context within this projected span. Private style/feature domains stay intact.
-func (r *Resolver) itemizeSpan(ctx context.Context, text string, span itemizationSpan, plain bool) ([]textItem, error) {
+func (r *StyleMapper) itemizeSpan(ctx context.Context, text string, span itemizationSpan, plain bool) ([]textItem, error) {
 	var css styled.Style
 	if !plain {
 		css = span.Style
@@ -199,7 +199,7 @@ func graphemeScript(chunk string, start, end uint64) (string, error) {
 
 // graphemeFace tries the primary then configured fallbacks in order, requiring
 // one face to cover the entire grapheme. Cmap errors terminate selection.
-func (r *Resolver) graphemeFace(chunk, primary string, start, end uint64) (string, error) {
+func (r *StyleMapper) graphemeFace(chunk, primary string, start, end uint64) (string, error) {
 	chosen := ""
 	var missing rune
 	candidates := append([]string{primary}, r.fallbackIDs...)
@@ -277,8 +277,8 @@ func inheritSoftHyphenFaces(local []textItem, primary string) {
 // applyTextItems styles the coalesced ranges and emits detached font bindings.
 // Feature windows must already be finalized. Preserve the text-only error return
 // behavior; ItemizeInline separately suppresses partial output on every failure.
-func (r *Resolver) applyTextItems(ctx context.Context, text string, out styled.Text, items []textItem) (styled.Text, []Binding, error) {
-	var bindings []Binding
+func (r *StyleMapper) applyTextItems(ctx context.Context, text string, out styled.Text, items []textItem) (styled.Text, []FontTextRun, error) {
+	var bindings []FontTextRun
 	for _, it := range items {
 		if err := ctx.Err(); err != nil {
 			return styled.TextFromString(text), nil, err
@@ -293,7 +293,7 @@ func (r *Resolver) applyTextItems(ctx context.Context, text string, out styled.T
 			return out, nil, err
 		}
 		info := r.faces[it.style.ResourceID].Info
-		bindings = append(bindings, Binding{Start: it.start, End: it.end, Path: info.Path, SHA256: info.SHA256, ResourceID: info.ResourceID, Origin: info.Origin, EmSize: resolved.EmSize, Script: it.style.Script})
+		bindings = append(bindings, FontTextRun{Start: it.start, End: it.end, Path: info.Path, SHA256: info.SHA256, ResourceID: info.ResourceID, Origin: info.Origin, EmSize: resolved.EmSize, Script: it.style.Script})
 	}
 	if err := ctx.Err(); err != nil {
 		return styled.TextFromString(text), nil, err

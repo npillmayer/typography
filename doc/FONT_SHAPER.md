@@ -123,7 +123,7 @@ Neither khipu nor root typography needs a switch over backend types.
 
 ## Coverage checks during resolver construction
 
-Extend `NewResolver(ctx, selected, coverage)` as follows:
+Extend `NewStyleMapper(ctx, selected, coverage)` as follows:
 
 1. Retain all existing structural validation: context, size, nonnil services and
    faces, resource identities/metadata, duplicates, roles and the closed entry
@@ -142,7 +142,7 @@ queries remain in their owning stage; attached atomic markers still bypass them.
 Do not move font preparation or add a second text coverage scan.
 
 `GlyphIndex` must retain defensive face validation for callers that bypass
-`NewResolver`. The OpenType service should use the same private face validator
+`NewStyleMapper`. The OpenType service should use the same private face validator
 as its `CheckFace` method.
 
 The existing one-function `CoverageFunc` cannot express acceptance. Replace it
@@ -336,7 +336,7 @@ Owning package tests must cover:
 - CheckFace purity: no metrics, coverage queries, reads, parsing, glyph emission,
   cluster changes or terminal errors. Rejection followed by acceptance on the
   same directly used stream succeeds; concurrent checks are race-free.
-- Resolver construction checks every distinct configured entry in canonical
+- StyleMapper construction checks every distinct configured entry in canonical
   order, preserves repeated fallback roles, and returns no resolver on failure.
   Existing validation/cancellation and immutable snapshot behavior remain.
 - A later incompatible resolved run fails before any base-paragraph shaping,

@@ -58,12 +58,12 @@ func (s *SelectedFonts) Clone() *SelectedFonts {
 	return &c
 }
 
-// NewResolver validates already loaded fonts without loading, discovery, shaping
+// NewStyleMapper validates already loaded fonts without loading, discovery, shaping
 // or coverage queries. It canonicalizes faces in default/rule/fallback order,
 // copies mutable metadata, and checks coverage acceptance for every selected face.
 // Acceptance checks perform no glyph queries. Only explicit
-// fallback references are eligible. Serialize operations sharing this resolver.
-func NewResolver(ctx context.Context, fonts SelectedFonts, coverage Coverage) (*Resolver, error) {
+// fallback references are eligible. Serialize operations sharing this style mapper.
+func NewStyleMapper(ctx context.Context, fonts SelectedFonts, coverage Coverage) (*StyleMapper, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("nil context")
 	}
@@ -76,7 +76,7 @@ func NewResolver(ctx context.Context, fonts SelectedFonts, coverage Coverage) (*
 	if nilFontService(coverage) {
 		return nil, fmt.Errorf("font coverage service is required")
 	}
-	r := &Resolver{selected: SelectedFonts{Default: fonts.Default, Size: fonts.Size, Rules: slices.Clone(fonts.Rules), Fallbacks: slices.Clone(fonts.Fallbacks)}, faces: make(map[string]FaceEntry), coverage: coverage, defaultID: fonts.Default}
+	r := &StyleMapper{selected: SelectedFonts{Default: fonts.Default, Size: fonts.Size, Rules: slices.Clone(fonts.Rules), Fallbacks: slices.Clone(fonts.Fallbacks)}, faces: make(map[string]FaceEntry), coverage: coverage, defaultID: fonts.Default}
 	for _, entry := range fonts.Faces {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -158,4 +158,4 @@ func nilFontService(value any) bool {
 
 // Snapshot returns all configured roles and faces in canonical reference order.
 // Metadata slices are detached; stable faces/resources are shared, never reloaded.
-func (r *Resolver) Snapshot() *SelectedFonts { return r.selected.Clone() }
+func (r *StyleMapper) Snapshot() *SelectedFonts { return r.selected.Clone() }

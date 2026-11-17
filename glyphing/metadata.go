@@ -34,14 +34,14 @@ type ShapingSpan struct {
 // private style identities needed by subsequent resolution.
 type Itemization struct {
 	Text     styled.Text
-	Bindings []Binding
+	Bindings []FontTextRun
 	Shaping  []ShapingSpan
 }
 
 // ItemizeWithMetadata exposes coalesced shaping metadata. The caller retains
 // document paint separately using style.ProjectPaint, and
 // supplies paragraph direction/isolates to bidi construction separately.
-func (r *Resolver) ItemizeWithMetadata(ctx context.Context, text string, spans []style.Span) (*Itemization, error) {
+func (r *StyleMapper) ItemizeWithMetadata(ctx context.Context, text string, spans []style.Span) (*Itemization, error) {
 	out, bindings, err := r.Itemize(ctx, text, spans)
 	if err != nil {
 		return nil, err

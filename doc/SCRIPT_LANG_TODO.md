@@ -58,7 +58,7 @@ existing query as a boolean acceptance gate.
 - [ ] Integrate the policy during itemization/selection, without discovery or
   loading. Preserve grapheme boundaries, source coordinates, feature domains,
   paint separation, deterministic candidate ordering, and terminal query errors.
-  Resolver construction must remain free of font queries.
+  StyleMapper construction must remain free of font queries.
 
 This capability query is **separate from `CheckFace`**. `CheckFace` remains a cheap
 representation-compatibility check with no font-table queries or stream mutation.

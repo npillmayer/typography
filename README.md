@@ -37,7 +37,7 @@ Prepare selected faces and itemize:
     glyphServices := glyphot.Services{}
     entry, err := glyphServices.Load(ctx, path, nil)
     if err != nil { return err }
-    resolver, err := glyphing.NewResolver(ctx, glyphing.SelectedFonts{
+    resolver, err := glyphing.NewStyleMapper(ctx, glyphing.SelectedFonts{
         Faces: []glyphing.FaceEntry{entry},
         Default: entry.Info.ResourceID, Size: size,
     }, glyphServices)

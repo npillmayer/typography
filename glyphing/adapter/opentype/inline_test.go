@@ -21,7 +21,7 @@ func TestItemizeInlineFeatureLigatureAndSourceCoordinates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := glyphing.NewResolver(t.Context(), glyphing.SelectedFonts{Faces: []glyphing.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 12 * dimen.BP}, Services{})
+	r, err := glyphing.NewStyleMapper(t.Context(), glyphing.SelectedFonts{Faces: []glyphing.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 12 * dimen.BP}, Services{})
 	if err != nil {
 		t.Fatal(err)
 	}

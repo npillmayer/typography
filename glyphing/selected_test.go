@@ -30,7 +30,7 @@ func TestSelectedFontsCanonicalOrderAndOwnership(t *testing.T) {
 	want := []string{s.Default, s.Rules[0].ResourceID, s.Fallbacks[0]}
 	s.Faces[0], s.Faces[2] = s.Faces[2], s.Faces[0]
 	coverage := glyphing.CoverageFuncs{Check: newServices().CheckFace, Lookup: func(contracts.FontFace, rune) (uint32, error) { t.Fatal("constructor queried coverage"); return 0, nil }}
-	r, err := glyphing.NewResolver(t.Context(), s, coverage)
+	r, err := glyphing.NewStyleMapper(t.Context(), s, coverage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,13 +73,13 @@ func TestSelectedFontsRejectInvalidEntriesAndReferences(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s := selectedFixture(t)
 			mutate(&s)
-			if r, err := glyphing.NewResolver(t.Context(), s, newServices()); r != nil || err == nil {
+			if r, err := glyphing.NewStyleMapper(t.Context(), s, newServices()); r != nil || err == nil {
 				t.Fatal("published invalid selection")
 			}
 		})
 	}
 	for _, coverage := range []glyphing.Coverage{nil, (*fakeServices)(nil), glyphing.CoverageFuncs{}} {
-		if r, err := glyphing.NewResolver(t.Context(), selectedFixture(t), coverage); r != nil || err == nil {
+		if r, err := glyphing.NewStyleMapper(t.Context(), selectedFixture(t), coverage); r != nil || err == nil {
 			t.Fatal("accepted unusable coverage")
 		}
 	}
@@ -87,15 +87,15 @@ func TestSelectedFontsRejectInvalidEntriesAndReferences(t *testing.T) {
 func TestSelectedFontsCancellationAndCoverageFailure(t *testing.T) {
 	s := selectedFixture(t)
 	f := newServices()
-	if r, err := glyphing.NewResolver(nil, s, f); r != nil || err == nil {
+	if r, err := glyphing.NewStyleMapper(nil, s, f); r != nil || err == nil {
 		t.Fatal("nil context")
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if r, err := glyphing.NewResolver(ctx, s, f); r != nil || !errors.Is(err, context.Canceled) {
+	if r, err := glyphing.NewStyleMapper(ctx, s, f); r != nil || !errors.Is(err, context.Canceled) {
 		t.Fatal("ignored cancellation", err)
 	}
-	r, err := glyphing.NewResolver(t.Context(), s, f)
+	r, err := glyphing.NewStyleMapper(t.Context(), s, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestSelectedFontsCancellationAndCoverageFailure(t *testing.T) {
 	// A configured rule face is not an implicit fallback merely because it is in the table.
 	s.Fallbacks = nil
 	s.Faces = s.Faces[:2]
-	r, err = glyphing.NewResolver(t.Context(), s, newServices())
+	r, err = glyphing.NewStyleMapper(t.Context(), s, newServices())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestSelectedFontsKeepDistinctOriginsForSameBytes(t *testing.T) {
 	entry.Info.Path = origin.Location
 	s.Faces = append(s.Faces, entry)
 	s.Fallbacks = append(s.Fallbacks, resource.ID())
-	r, err := glyphing.NewResolver(t.Context(), s, newServices())
+	r, err := glyphing.NewStyleMapper(t.Context(), s, newServices())
 	if err != nil {
 		t.Fatal(err)
 	}

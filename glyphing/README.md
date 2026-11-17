@@ -4,7 +4,7 @@ Font/style resolution and grapheme/script itemization for typesetting.
 This package consumes preloaded faces and injected coverage. It neither discovers
 nor parses fonts and has no rendering dependency.
 
-NewResolver validates a closed SelectedFonts table and explicit default, ordered
+NewStyleMapper validates a closed SelectedFonts table and explicit default, ordered
 style-rule and fallback resource IDs. Every configured face is represented once;
 unused rules remain part of the snapshot. Backend acceptance performs no glyph
 queries. Snapshots detach metadata and share stable faces/resources.

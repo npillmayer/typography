@@ -62,7 +62,7 @@ func (f *fakeServices) services() testServices {
 func documentStyle() style.Style {
 	return style.Style{Family: "serif", EmSize: 18 * dimen.BP, Weight: 700, Slant: "normal", Color: "red", Language: "en", WhiteSpace: "normal", UnicodeBidi: "normal"}
 }
-func load(t *testing.T, f *fakeServices, s fixtureSettings) *glyphing.Resolver {
+func load(t *testing.T, f *fakeServices, s fixtureSettings) *glyphing.StyleMapper {
 	t.Helper()
 	r, err := loadResolver(context.Background(), s, f.services())
 	if err != nil {
@@ -115,7 +115,7 @@ func TestMappingAndSnapshotOwnership(t *testing.T) {
 	if r.Snapshot().Rules[0].Weight != 700 {
 		t.Fatal("snapshot aliases policy")
 	}
-	replay, err := glyphing.NewResolver(t.Context(), *r.Snapshot(), f)
+	replay, err := glyphing.NewStyleMapper(t.Context(), *r.Snapshot(), f)
 	if err != nil {
 		t.Fatal(err)
 	}

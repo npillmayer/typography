@@ -14,8 +14,8 @@ import (
 	"golang.org/x/text/language"
 )
 
-// Binding records the chosen face and exact processed-text byte range.
-type Binding struct {
+// FontTextRun records the chosen face and exact processed-text byte range.
+type FontTextRun struct {
 	Start, End   uint64
 	Path, SHA256 string
 	ResourceID   string
@@ -24,10 +24,10 @@ type Binding struct {
 	Script       string
 }
 
-// Resolver maps document styles and itemizes text using explicitly loaded faces.
-// Construct it with NewResolver and serialize operations sharing a resolver.
+// StyleMapper maps document styles and itemizes text using explicitly loaded faces.
+// Construct it with NewStyleMapper and serialize operations sharing a style mapper.
 // Injected services and retained faces must remain valid for all retained results.
-type Resolver struct {
+type StyleMapper struct {
 	selected    SelectedFonts
 	coverage    Coverage
 	faces       map[string]FaceEntry
@@ -39,7 +39,7 @@ type Resolver struct {
 
 // Infos returns detached identity records, including detached warning slices,
 // in default/rule/fallback reference order with duplicate resource identities removed.
-func (r *Resolver) Infos() []fontmeta.Info {
+func (r *StyleMapper) Infos() []fontmeta.Info {
 	infos := make([]fontmeta.Info, len(r.infos))
 	for i, v := range r.infos {
 		infos[i] = v
@@ -50,7 +50,7 @@ func (r *Resolver) Infos() []fontmeta.Info {
 
 // Defaults returns the selected default face and size with English language,
 // Latin script and elastic spacing. The face is retained, not cloned.
-func (r *Resolver) Defaults() contracts.ResolvedRunStyle {
+func (r *StyleMapper) Defaults() contracts.ResolvedRunStyle {
 	return contracts.ResolvedRunStyle{Font: r.faces[r.defaultID].Face, EmSize: r.selected.Size, Language: language.English, Script: language.MustParseScript("Latn"), Spacing: contracts.SpacingElastic}
 }
 func familyMatches(list, want string) bool {
@@ -67,7 +67,7 @@ func familyMatches(list, want string) bool {
 // paint is ignored; other style implementations are rejected. Feature slices are
 // detached, and itemized feature windows clip/rebase defaults without losing their
 // original scalar domains. Keep itemized style values intact when passing them on.
-func (r *Resolver) ResolveStyle(value styled.Style, defaults contracts.ResolvedRunStyle) (contracts.ResolvedRunStyle, error) {
+func (r *StyleMapper) ResolveStyle(value styled.Style, defaults contracts.ResolvedRunStyle) (contracts.ResolvedRunStyle, error) {
 	if item, ok := value.(runStyle); ok {
 		var css styled.Style
 		if !item.Plain {
@@ -122,12 +122,12 @@ func (r *Resolver) ResolveStyle(value styled.Style, defaults contracts.ResolvedR
 }
 
 // CheckText validates itemization and coverage without retaining the styled text.
-func (r *Resolver) CheckText(ctx context.Context, text string, spans []typestyle.Span) ([]Binding, error) {
+func (r *StyleMapper) CheckText(ctx context.Context, text string, spans []typestyle.Span) ([]FontTextRun, error) {
 	_, bindings, err := r.Itemize(ctx, text, spans)
 	return bindings, err
 }
 
-func (r *Resolver) styleID(css typestyle.Typography) string {
+func (r *StyleMapper) styleID(css typestyle.Typography) string {
 	path := r.defaultID
 	for i, rule := range r.selected.Rules {
 		if (rule.Family == "" || familyMatches(css.Family, rule.Family)) && (rule.Weight == 0 || rule.Weight == css.Weight) && (rule.Slant == "" || rule.Slant == css.Slant) {

@@ -49,7 +49,7 @@ func TestInjectedLoadingAndCoverageServices(t *testing.T) {
 	if _, err = s.Load(context.Background(), "", nil); err == nil {
 		t.Fatal("missing source")
 	}
-	r, err := glyphing.NewResolver(context.Background(), glyphing.SelectedFonts{Faces: []glyphing.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 12 * dimen.BP}, s)
+	r, err := glyphing.NewStyleMapper(context.Background(), glyphing.SelectedFonts{Faces: []glyphing.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 12 * dimen.BP}, s)
 	if err != nil {
 		t.Fatal(err)
 	}
