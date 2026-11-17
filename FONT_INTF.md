@@ -1,5 +1,9 @@
 # Font input boundary: move discovery upstream
 
+> Package update: this document includes historical API locations.
+> See [current ownership](README.md) for the glyphing/render split.
+> Old root, paragraph and combined-adapter APIs have been removed.
+
 Status: implemented and verified in typography and sibling tytui on 2026-11-15.
 This document retains the agreed migration rationale and acceptance criteria.
 Current API guidance is in README.md.

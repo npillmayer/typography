@@ -1,5 +1,9 @@
 # Font-face compatibility through CheckFace
 
+> Package update: this document includes historical API locations.
+> See [current ownership](README.md) for the glyphing/render split.
+> Old root, paragraph and combined-adapter APIs have been removed.
+
 Status: implemented on 2026-11-16; validation is recorded below. Revised on 2026-11-16. This plan supersedes
 its earlier proposal to propagate a font type parameter through the pipeline.
 The [selected-font boundary](FONT_INTF.md) remains in place; historical replay

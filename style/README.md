@@ -15,3 +15,6 @@ Sizes use DU (65536 DU per big point), not pixels. Values contain no mutable fon
 Validation and projection checks live in `style_test.go`; run `go test ./style`
 from the module root. See the [integration guide](../README.md) for itemization
 and separate paint ownership.
+
+PaintSpan and ProjectPaint retain original paint ranges independently of shaping
+metadata. Neither projection nor span storage imports a renderer.

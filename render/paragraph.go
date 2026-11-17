@@ -3,22 +3,24 @@ package render
 import (
 	"context"
 	"fmt"
-	"github.com/npillmayer/khipu"
-	"github.com/npillmayer/khipu/contracts"
-	"github.com/npillmayer/khipu/dimen"
-	"github.com/npillmayer/typography"
-	"github.com/npillmayer/typography/paragraph"
-	"golang.org/x/image/colornames"
 	"math"
 	"regexp"
 	"strings"
+
+	"github.com/npillmayer/khipu"
+	"github.com/npillmayer/khipu/contracts"
+	"github.com/npillmayer/khipu/dimen"
+	fontmeta "github.com/npillmayer/typography/font"
+	"github.com/npillmayer/typography/layout"
+	typestyle "github.com/npillmayer/typography/style"
+	"golang.org/x/image/colornames"
 )
 
 // Services supplies retained identity and outlines; no backend is installed here.
 // Keep these services usable for the duration of proof construction.
 type Services struct {
 	Backend  Backend
-	Identity typography.IdentityProvider
+	Identity fontmeta.IdentityProvider
 }
 
 // ParagraphInput borrows completed immutable placements and frozen content.
@@ -27,9 +29,9 @@ type Services struct {
 // Keep the input and service implementations stable during this call.
 type ParagraphInput struct {
 	Frozen *khipu.FrozenKhipu
-	VList  *paragraph.VList
+	VList  *layout.VList
 	Text   string
-	Paint  []typography.PaintSpan
+	Paint  []typestyle.PaintSpan
 }
 
 // Glyph holds physical drawing order and original source correspondence.
@@ -59,7 +61,7 @@ type ParagraphProof struct {
 
 var hexColor = regexp.MustCompile(`^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$`)
 
-func proofColor(spans []typography.PaintSpan, pos uint64) (string, error) {
+func proofColor(spans []typestyle.PaintSpan, pos uint64) (string, error) {
 	color := "black"
 	for _, s := range spans {
 		if s.Start <= pos && pos < s.End {
@@ -119,7 +121,7 @@ func (p *ParagraphProof) include(x, y float64) {
 
 // appendLine uses retained vertical placement and traverses physical knots once.
 // All knots advance the horizontal pen, including glue, fill and atomic boxes.
-func (p *ParagraphProof) appendLine(ctx context.Context, input ParagraphInput, services Services, placement paragraph.Line) error {
+func (p *ParagraphProof) appendLine(ctx context.Context, input ParagraphInput, services Services, placement layout.Line) error {
 	li, line := placement.Index, placement.Horizontal
 	baseline := placement.Baseline
 	p.Lines = append(p.Lines, Line{placement.X, baseline, placement.Top, placement.Height, line.Width.Points(), line.TargetWidth.Points()})

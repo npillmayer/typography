@@ -10,44 +10,55 @@ import (
 	"time"
 )
 
-func TestExtractedPackageDependencyBoundaries(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func dependencies(t *testing.T, roots ...string) []string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, "go", "list", "-deps", "-json", ".", "./style", "./fontresource", "./render", "./paragraph").CombinedOutput()
+	args := append([]string{"list", "-deps", "-json"}, roots...)
+	data, err := exec.CommandContext(ctx, "go", args...).CombinedOutput()
 	if err != nil {
-		t.Fatalf("dependency inspection: %v: %s", err, output)
+		t.Fatalf("dependency inspection: %v: %s", err, data)
 	}
-	dec := json.NewDecoder(strings.NewReader(string(output)))
+	dec := json.NewDecoder(strings.NewReader(string(data)))
+	var paths []string
 	for {
-		var pkg struct {
-			ImportPath string
-			Imports    []string
-		}
-		if err = dec.Decode(&pkg); err == io.EOF {
-			break
+		var pkg struct{ ImportPath string }
+		err = dec.Decode(&pkg)
+		if err == io.EOF {
+			return paths
 		}
 		if err != nil {
-			t.Fatalf("dependency inspection: %v: %s", err, output)
+			t.Fatal(err)
 		}
-		for _, blocked := range []string{"tytui", "github.com/npillmayer/w3c-dom", "github.com/npillmayer/fontfind", "github.com/npillmayer/opentype", "github.com/npillmayer/typography/adapter", "github.com/npillmayer/typography/discovery"} {
-			if pkg.ImportPath == blocked || strings.HasPrefix(pkg.ImportPath, blocked+"/") {
-				t.Fatalf("generic packages acquired dependency %s", pkg.ImportPath)
+		paths = append(paths, pkg.ImportPath)
+	}
+}
+func forbid(t *testing.T, paths []string, blocked ...string) {
+	t.Helper()
+	for _, p := range paths {
+		for _, b := range blocked {
+			if p == b || strings.HasPrefix(p, b+"/") {
+				t.Fatalf("forbidden dependency %s", p)
 			}
 		}
 	}
 }
-
-// Even backend packages must leave discovery and application selection upstream.
-func TestModuleHasNoDiscoveryImports(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "go", "list", "-f", `{{.ImportPath}} {{join .Imports " "}}`, "./...").CombinedOutput()
-	if err != nil {
-		t.Fatalf("dependency inspection: %v: %s", err, out)
-	}
-	for _, blocked := range []string{"github.com/npillmayer/fontfind", "typography/discovery", "typography/adapter/fontfind", "tytui"} {
-		if strings.Contains(string(out), blocked) {
-			t.Fatalf("module acquired discovery import %s", blocked)
-		}
-	}
+func TestPackageArms(t *testing.T) {
+	const root = "github.com/npillmayer/typography/"
+	t.Run("shared", func(t *testing.T) {
+		forbid(t, dependencies(t, "./font", "./fontresource", "./layout", "./style"), root+"glyphing", root+"render")
+	})
+	t.Run("glyphing", func(t *testing.T) {
+		forbid(t, dependencies(t, "./glyphing/..."), root+"render")
+	})
+	t.Run("render", func(t *testing.T) {
+		forbid(t, dependencies(t, "./render/..."), root+"glyphing")
+	})
+	t.Run("generic", func(t *testing.T) {
+		forbid(t, dependencies(t, ".", "./glyphing", "./glyphing/paragraph", "./render", "./font", "./fontresource", "./layout", "./style"),
+			"github.com/npillmayer/opentype", root+"glyphing/adapter", root+"render/adapter")
+	})
+	t.Run("no-discovery", func(t *testing.T) {
+		forbid(t, dependencies(t, "./..."), "tytui", "github.com/npillmayer/fontfind", "github.com/npillmayer/w3c-dom")
+	})
 }

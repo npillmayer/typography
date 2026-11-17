@@ -8,9 +8,8 @@ abstract font/scale model. Resource request Slant/Weight codes preserve the lega
 identity encoding; they are not document CSS weights. Preserve version-1 hash
 formatting, wire values, source coordinates, and immutable ownership.
 
-adapter/opentype owns normal parsing, retained bytes, metrics, scaling, streaming
-and outlines. No parsed-font accessor belongs in public boundaries. Lazy queries,
-shaping and outlines share the face lock. Preserve synchronous production with
+glyphing/adapter/opentype owns parsing, bytes, metrics, scaling and streaming.
+render/adapter/opentype owns outlines and its independent parser/cache. No parsed-font accessor belongs in public boundaries. Lazy glyphing queries and shaping share the face lock; outlines use a rendering lock. Preserve synchronous production with
 concurrent draining, scalar features/clusters, terminal errors and cancellation.
 No relaxed test-font parsing in production.
 
@@ -21,7 +20,7 @@ in owning packages and verify compatibility through sibling tytui. Run ordinary
 and race suites, build and vet in both modules when changing these boundaries.
 Adapter tests use sibling opentype font fixtures. Do not commit or push for the user.
 
-Root typography accepts preloaded SelectedFonts and injected Coverage through
+glyphing accepts preloaded SelectedFonts and injected Coverage through
 NewResolver. It stores contracts.FontFace with neutral identity/resource metadata
 and imports neither adapter/opentype, fontfind, DOM nor tytui. No loading callback
 or default backend belongs here. Validate a closed entry table: one entry for each
@@ -33,7 +32,8 @@ Coverage.CheckFace once per distinct canonical selected entry after structural
 validation. This is read-only representation acceptance, not glyph preflight. Keep mapping,
 grapheme/script/fallback and snapshot policy here; test it with fake preloaded
 faces. Tytui prepares fonts before layout; versioned wire DTOs stay in replay.
-ItemizeWithMetadata preserves original paint spans alongside coalesced shaping.
+ItemizeWithMetadata returns shaping metadata only. Applications retain
+style.ProjectPaint output independently.
 Bidi context and original nonempty feature domains must remain intact.
 
 Application package tytui/fontselection owns request policy/cache/evidence,
@@ -43,7 +43,7 @@ discovery is allowed. Keep provider/diagnostic ordering, exact-match attestation
 explicit substitution, terminal read/parse errors and cancellation/cache ownership
 covered by application tests. The upstream read allocates before the resource bound;
 providers must remain trusted and offline.
-OpenType Services owns retained identity, outline-to-path conversion and VisualOrder.
+Rendering OpenType Services owns identity, outline-to-path conversion and VisualOrder.
 Generic proof consumers use IdentityProvider/render.Backend, never concrete faces.
 No backend services are serialized. Current replay controls protect output;
 historical pre-step manifests remain unchanged as version-rejection cases.
@@ -59,21 +59,21 @@ run both modules' full suites.
 
 ## Styles and paint
 
-The root resolver owns `ProjectStyles`, producing `TypographySpan` values with
+The glyphing resolver owns `ProjectStyles`, producing `TypographySpan` values with
 color-free `TypographyStyle` styles. The private run-domain identity preserves
 relative feature origins without carrying paint through styled.Text. Itemize and
 ItemizeInline use the same projection rules and their
 internal run styles contain no document Color field. ResolveStyle accepts projected
 styles and legacy document Style inputs. Keep document equality and JSON unchanged.
 The application retains `PaintSpan` values separately for rendering; tytui's
-Result.PaintSpans returns a detached copy. ItemizeWithMetadata remains compatible.
+Result.PaintSpans returns a detached copy. Itemization contains no Paint field.
 Projection does not change document equality or replay formats.
 
 Do not reintroduce tytui's removed fontbackend package or htmlinput style aliases.
 OpenType Services.Load prepares FaceEntry values; Services implements Coverage.
 Concrete type assertions stay inside the adapter. Do not reintroduce application
 face/resource wrappers. Fontselection.Selection carries SelectedFonts and detached
-application Provenance; the resolver's Snapshot is *typography.SelectedFonts.
+application Provenance; the resolver's Snapshot is *glyphing.SelectedFonts.
 Root path-bearing Settings/Rule, LoadSettings, FaceLoader/LoadFunc and the loader
 Services bundle are retired. Replay owns explicit input/policy/descriptor/font
 wire records; preserve numeric provenance codes, Fonts:null and current controls. Load validates every stored font but only passes referenced faces to the
@@ -106,7 +106,7 @@ at StageInput; use Prepare and Prepared.Layout for mixed input. Input is prepare
 styled.Text plus Direction and zero-byte Markup; Params separates Constraints,
 Breaker and Assembly defaults. khipu.Config supplies existing service contracts.
 Do not import DOM/discovery/adapters or add paint/layout-style reconstruction here.
-The root resolver prepares text before paragraph execution; preserve private feature domains and source coordinates.
+The glyphing resolver prepares text before paragraph execution; preserve private feature domains and source coordinates.
 Each invocation owns fresh encoding/breaking state; never return elastic owners or
 partial results. Errors preserve causes and stages. Whitespace normalization and
 DOM source maps remain with the input adapter/application. The former tytui internal/layout package
@@ -246,11 +246,25 @@ permanent format migration framework is provided.
 Font acceptance uses khipu/contracts.FontAcceptor.CheckFace, embedded in shapers
 and Coverage. Keep checks cheap, concurrent-safe and free of I/O, parsing,
 metric/glyph queries and stream-state changes. OpenType face acceptance is handled
-only by typography/adapter/opentype: Stream.CheckFace and Services.CheckFace share
+only by typography/glyphing/adapter/opentype: Stream.CheckFace and Services.CheckFace share
 private validation with direct Shape/GlyphIndex calls. Do not forward CheckFace
 to opentype/otshape or add this interface-compatibility contract there. The adapter
 passes its private concrete *ot.Font to otshape only for actual shaping.
 Khipu checks actual resolved runs before production and each fresh lazy replacement
 stream; failures publish no partial output and remain retryable. Finish unused streams and join
-active producers before cleanup. No type parameters, renderer redesign, new
-backend serialization or replay version changes belong to this migration.
+active producers before cleanup. No type parameters, new backend serialization or replay version changes belong
+to the font-acceptance migration.
+
+
+## Current package arms
+
+glyphing and glyphing/paragraph own resolution/preparation/layout; render owns
+proofs. Neither branch imports the other, including concrete adapters. Shared
+font, fontresource, style and layout import neither branch. Root is documentation
+only; no old-path aliases. Tests spanning branches belong in integration.
+
+layout.VList validates/copies geometry at publication. Paragraph assembly state
+stays private. font owns neutral Info/IdentityProvider/ResourceFace/Source.
+Khipu retains FontInstance. Rendering owns independent lazy outline caches and
+never reopens files or queries glyphing metrics. Do not copy render services
+after first use. Keep dependency audits enforcing these boundaries.
