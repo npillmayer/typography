@@ -114,7 +114,7 @@ func (s *Stream) Shape(ctx context.Context, p contracts.ShapeParams, src contrac
 	if src == nil {
 		return otshape.ErrNilRuneSource
 	}
-	face, err := acceptedFace(p.Font)
+	face, err := acceptedFace(p.Font.Face())
 	if err != nil {
 		return fmt.Errorf("OpenType shaping: %w", err)
 	}

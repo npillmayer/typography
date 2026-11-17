@@ -61,3 +61,15 @@ Run `go test ./adapter/opentype` and `go test -race ./adapter/opentype`. Tests u
 sibling opentype font fixtures and cover parsing, retained resources, shaping,
 feature coordinates, prepared reuse and rendering. See the
 [integration guide](../../README.md) for cross-module checks.
+
+## Sized instances
+
+Face remains size-independent. khipu/contracts.NewFontInstance binds a face and
+physical DU em size using Face.Scale once. The adapter caches
+otquery.FontScale(font, 1) at loading; each size multiplies that factor by its DU
+value, preserving fractional conversions. ShapeParams.Font is the instance;
+Stream unwraps Font.Face() and emits unscaled font-unit glyph records.
+Frozen consumers use Context.Params.Font.Face(), EmSize() and Scale().
+Rendering and line measurement reuse the retained binding rather than rebuilding
+it. Instances and their shared face/scale services must remain stable for all
+retained results.

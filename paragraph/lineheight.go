@@ -120,10 +120,11 @@ func validateLineLayout(l *LineLayout, text styled.Text, cfg khipu.Config) error
 
 type fontExtents struct{ a, d, g, em float64 }
 
-func cssMetrics(face contracts.FontFace, scale contracts.FontScale, size dimen.DU) (fontExtents, error) {
-	if nilService(face) || nilService(scale) || size <= 0 || size >= dimen.Fil {
+func cssMetrics(instance contracts.FontInstance) (fontExtents, error) {
+	if !instance.Valid() {
 		return fontExtents{}, fmt.Errorf("invalid line-height font/scale/size")
 	}
+	face, scale, size := instance.Face(), instance.Scale(), instance.EmSize()
 	m, err := face.Metrics()
 	if err != nil {
 		return fontExtents{}, err
@@ -142,11 +143,11 @@ func cssFaceMetrics(s contracts.ResolvedRunStyle) (fontExtents, error) {
 	if nilService(s.Font) || s.EmSize <= 0 || s.EmSize >= dimen.Fil {
 		return fontExtents{}, fmt.Errorf("missing line-height font")
 	}
-	scale, err := s.Font.Scale(s.EmSize)
+	instance, err := contracts.NewFontInstance(s.Font, s.EmSize)
 	if err != nil {
 		return fontExtents{}, err
 	}
-	return cssMetrics(s.Font, scale, s.EmSize)
+	return cssMetrics(instance)
 }
 func (h LineHeight) extents(e fontExtents) (float64, float64, error) {
 	var height float64

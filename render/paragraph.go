@@ -144,7 +144,10 @@ func (p *ParagraphProof) appendLine(ctx context.Context, input ParagraphInput, s
 // origin supplies its line/knot indexes and initial pen position. Glyph advances
 // affect only this fragment; the enclosing line advances by the frozen knot width.
 func (p *ParagraphProof) appendText(ctx context.Context, input ParagraphInput, services Services, knot khipu.FrozenKnot, t khipu.FrozenText, origin Glyph) error {
-	identity, err := services.Identity.Identify(t.Context.Params.Font)
+	if !t.Context.Params.Font.Valid() {
+		return fmt.Errorf("invalid retained font instance")
+	}
+	identity, err := services.Identity.Identify(t.Context.Params.Font.Face())
 	if err != nil {
 		return err
 	}
@@ -156,7 +159,7 @@ func (p *ParagraphProof) appendText(ctx context.Context, input ParagraphInput, s
 	if err != nil {
 		return err
 	}
-	scale := t.Context.Scale.ToDU(1) / float64(dimen.BP)
+	scale := t.Context.Params.Font.Scale().ToDU(1) / float64(dimen.BP)
 	if math.IsNaN(scale) || math.IsInf(scale, 0) || scale <= 0 {
 		return fmt.Errorf("invalid retained glyph scale")
 	}
@@ -177,7 +180,7 @@ func (p *ParagraphProof) appendText(ctx context.Context, input ParagraphInput, s
 		}
 		gx, gy := penX+float64(g.XOffset)*scale, penY-float64(g.YOffset)*scale
 		glyph := Glyph{Line: origin.Line, Knot: origin.Knot, SourceByte: source, GlyphID: g.GlyphID, Cluster: g.Cluster, X: gx, Y: gy, Scale: scale, Color: color, FaceSHA256: identity.SHA256}
-		if err := p.appendGlyph(services.Backend, t.Context.Params.Font, glyph); err != nil {
+		if err := p.appendGlyph(services.Backend, t.Context.Params.Font.Face(), glyph); err != nil {
 			return err
 		}
 		penX += float64(g.XAdvance) * scale

@@ -349,7 +349,7 @@ func (s *inlineRecordingStream) Shape(ctx context.Context, p contracts.ShapePara
 	s.params = append(s.params, p)
 	s.inputs = append(s.inputs, text.String())
 	// Transport fixture: retain submitted parameters, then use synthetic glyphs.
-	p.Font = helpers.NewSyntheticFont()
+	p.Font, _ = contracts.NewFontInstance(helpers.NewSyntheticFont(), p.Font.EmSize())
 	p.Features = nil
 	return s.StreamingShaper.Shape(ctx, p, strings.NewReader(text.String()), o)
 }

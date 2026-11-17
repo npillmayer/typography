@@ -52,7 +52,7 @@ func TestFaceAndParser(t *testing.T) {
 func TestStreamReferenceAndClusters(t *testing.T) {
 	f := fixture(t)
 	s, _ := NewStream(1)
-	params := contracts.ShapeParams{Font: f, Script: language.MustParseScript("Latn"), Language: language.English}
+	params := contracts.ShapeParams{Font: testInstance(f, 10*dimen.BP), Script: language.MustParseScript("Latn"), Language: language.English}
 	done := make(chan error, 1)
 	go func() {
 		if err := s.SetInitialCluster(4); err != nil {
@@ -96,10 +96,10 @@ func TestStreamReferenceAndClusters(t *testing.T) {
 func TestStreamFailureAndCancel(t *testing.T) {
 	for _, foreign := range []bool{false, true} {
 		s, _ := NewStream(1)
-		p := contracts.ShapeParams{Font: fixture(t), Script: language.MustParseScript("Latn"), Language: language.English}
+		p := contracts.ShapeParams{Font: testInstance(fixture(t), 10*dimen.BP), Script: language.MustParseScript("Latn"), Language: language.English}
 		ctx, cancel := context.WithCancel(context.Background())
 		if foreign {
-			p.Font = helpers.NewSyntheticFont()
+			p.Font, _ = contracts.NewFontInstance(helpers.NewSyntheticFont(), p.Font.EmSize())
 		} else {
 			cancel()
 		}
@@ -118,7 +118,7 @@ func TestStreamBackpressureCancellation(t *testing.T) {
 	s, _ := NewStream(1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	params := contracts.ShapeParams{Font: fixture(t), Script: language.MustParseScript("Latn"), Language: language.English}
+	params := contracts.ShapeParams{Font: testInstance(fixture(t), 10*dimen.BP), Script: language.MustParseScript("Latn"), Language: language.English}
 	done := make(chan error, 1)
 	go func() {
 		done <- s.Shape(ctx, params, strings.NewReader(strings.Repeat("a", 100)), contracts.ShapeBufferOptions{})
@@ -144,7 +144,7 @@ func TestStreamBackpressureCancellation(t *testing.T) {
 func TestFeatureRangesAndMissingOutput(t *testing.T) {
 	for _, missing := range []bool{false, true} {
 		s, _ := NewStream(2)
-		p := contracts.ShapeParams{Font: fixture(t), Script: language.MustParseScript("Latn"), Language: language.English, Features: []contracts.ShapeFeature{{Tag: [4]byte{'t', 'e', 's', 't'}, Enabled: true, Start: 2, End: 4}}}
+		p := contracts.ShapeParams{Font: testInstance(fixture(t), 10*dimen.BP), Script: language.MustParseScript("Latn"), Language: language.English, Features: []contracts.ShapeFeature{{Tag: [4]byte{'t', 'e', 's', 't'}, Enabled: true, Start: 2, End: 4}}}
 		text := "fifi"
 		if missing {
 			text = "X"

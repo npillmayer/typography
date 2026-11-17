@@ -40,7 +40,11 @@ func TestFaceAcceptanceAndDirectValidation(t *testing.T) {
 				t.Fatal("direct coverage", err)
 			}
 			direct, _ := NewStream(1)
-			err := direct.Shape(t.Context(), contracts.ShapeParams{Font: tc.face}, strings.NewReader("a"), contracts.ShapeBufferOptions{})
+			instance := contracts.FontInstance{}
+			if errors.Is(tc.want, contracts.ErrUnsupportedFontFace) {
+				instance = testInstance(helpers.NewSyntheticFont(), 10*dimen.BP)
+			}
+			err := direct.Shape(t.Context(), contracts.ShapeParams{Font: instance}, strings.NewReader("a"), contracts.ShapeBufferOptions{})
 			if !errors.Is(err, tc.want) || !errors.Is(direct.Err(), tc.want) {
 				t.Fatal("lost terminal lifecycle", err, direct.Err())
 			}
@@ -72,7 +76,7 @@ func TestFaceAcceptanceAndDirectValidation(t *testing.T) {
 			}
 		})
 	}
-	err = stream.Shape(t.Context(), contracts.ShapeParams{Font: face}, strings.NewReader("a"), contracts.ShapeBufferOptions{})
+	err = stream.Shape(t.Context(), contracts.ShapeParams{Font: testInstance(face, 10*dimen.BP)}, strings.NewReader("a"), contracts.ShapeBufferOptions{})
 	wg.Wait()
 	if err != nil {
 		t.Fatal(err)

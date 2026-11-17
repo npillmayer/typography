@@ -184,13 +184,30 @@ func TestAssemblyValidation(t *testing.T) {
 }
 
 type metricFace struct {
-	m   contracts.FontMetrics
-	err error
+	m     contracts.FontMetrics
+	err   error
+	scale contracts.FontScale
 }
 
 func (f *metricFace) Metrics() (contracts.FontMetrics, error) { return f.m, f.err }
-func (*metricFace) Scale(dimen.DU) (contracts.FontScale, error) {
-	panic("assembly must use retained scale")
+func (f *metricFace) Scale(dimen.DU) (contracts.FontScale, error) {
+	if f.scale == nil {
+		panic("assembly must use retained scale")
+	}
+	scale := f.scale
+	f.scale = nil
+	return scale, nil
+}
+func metricInstance(face *metricFace, scale contracts.FontScale) (contracts.FontInstance, error) {
+	face.scale = scale
+	return contracts.NewFontInstance(face, 10*dimen.BP)
+}
+func mustMetricInstance(face *metricFace, scale contracts.FontScale) contracts.FontInstance {
+	i, err := metricInstance(face, scale)
+	if err != nil {
+		panic(err)
+	}
+	return i
 }
 
 type metricScale func(int32) float64
@@ -200,7 +217,7 @@ func (f metricScale) ToDU(n int32) float64 { return f(n) }
 func TestContractMetricsValidation(t *testing.T) {
 	sentinel := errors.New("metrics unavailable")
 	face := &metricFace{m: contracts.FontMetrics{UnitsPerEm: 1000, Ascent: 700, Descent: -300, LineGap: 400}}
-	base := khipu.FrozenText{Context: khipu.FrozenTextContext{Params: contracts.ShapeParams{Font: face}, EmSize: 10 * dimen.BP, Scale: metricScale(func(n int32) float64 { return float64(n) * float64(dimen.BP) / 100 })}}
+	base := khipu.FrozenText{Context: khipu.FrozenTextContext{Params: contracts.ShapeParams{Font: mustMetricInstance(face, metricScale(func(n int32) float64 { return float64(n) * float64(dimen.BP) / 100 }))}}}
 	a, d, g, err := measure(base)
 	if err != nil || a != 7 || d != 3 || g != 4 {
 		t.Fatal("signed metrics", a, d, g, err)
@@ -216,31 +233,28 @@ func TestContractMetricsValidation(t *testing.T) {
 	}
 	face.err = nil
 	for _, value := range []float64{math.NaN(), math.Inf(1), -1, 0, 1e20} {
-		bad := base
-		bad.Context.Scale = metricScale(func(int32) float64 { return value })
-		if _, _, _, err = measure(bad); err == nil {
-			t.Fatalf("accepted scale %v", value)
+		instance, err := metricInstance(face, metricScale(func(int32) float64 { return value }))
+		if err == nil {
+			bad := base
+			bad.Context.Params.Font = instance
+			if _, _, _, err = measure(bad); err == nil {
+				t.Fatalf("accepted scale %v", value)
+			}
 		}
 	}
 	bad := base
-	bad.Context.Scale = metricScale(func(n int32) float64 {
+	bad.Context.Params.Font = mustMetricInstance(face, metricScale(func(n int32) float64 {
 		if n == 1 {
 			return 1
 		}
 		return math.NaN()
-	})
+	}))
 	if _, _, _, err = measure(bad); err == nil {
 		t.Fatal("accepted nonfinite metric conversion")
 	}
-	bad = base
-	bad.Context.Params.Font = (*metricFace)(nil)
+	bad.Context.Params.Font = contracts.FontInstance{}
 	if _, _, _, err = measure(bad); err == nil {
-		t.Fatal("accepted typed nil face")
-	}
-	bad = base
-	bad.Context.Scale = metricScale(nil)
-	if _, _, _, err = measure(bad); err == nil {
-		t.Fatal("accepted typed nil scale")
+		t.Fatal("accepted zero instance")
 	}
 	face.m.UnitsPerEm = 0
 	if _, _, _, err = measure(base); err == nil {

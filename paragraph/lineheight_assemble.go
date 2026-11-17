@@ -138,7 +138,7 @@ func measureLineHeight(ctx context.Context, f *khipu.FrozenKhipu, line khipu.Fro
 			if len(tx.Glyphs) == 0 {
 				continue
 			} // silent discretionary material
-			m, e := cssMetrics(tx.Context.Params.Font, tx.Context.Scale, tx.Context.EmSize)
+			m, e := cssMetrics(tx.Context.Params.Font)
 			if e != nil {
 				return lineHeightExtents{}, e
 			}

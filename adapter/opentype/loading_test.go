@@ -66,7 +66,7 @@ func TestExtractionContractFeatureCoordinatesWithClusterBase(t *testing.T) {
 	if err := stream.SetInitialCluster(7); err != nil {
 		t.Fatal(err)
 	}
-	params := contracts.ShapeParams{Font: fixture(t), Script: language.MustParseScript("Latn"), Language: language.English, Features: []contracts.ShapeFeature{{Tag: [4]byte{'t', 'e', 's', 't'}, Enabled: true, Start: 2, End: 4}}}
+	params := contracts.ShapeParams{Font: testInstance(fixture(t), 10*dimen.BP), Script: language.MustParseScript("Latn"), Language: language.English, Features: []contracts.ShapeFeature{{Tag: [4]byte{'t', 'e', 's', 't'}, Enabled: true, Start: 2, End: 4}}}
 	done := make(chan error, 1)
 	go func() {
 		err := stream.Shape(context.Background(), params, strings.NewReader("fifi"), contracts.ShapeBufferOptions{Flush: contracts.ShapeFlushCluster})

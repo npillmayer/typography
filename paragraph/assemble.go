@@ -56,11 +56,14 @@ type VList struct {
 func (v *VList) AtomicPlacements() []AtomicPlacement { return slices.Clone(v.atomics) }
 
 // Box returns logical paragraph geometry by value.
-func (v *VList) Box() Box                   { return v.box }
+func (v *VList) Box() Box { return v.box }
+
 // Lines returns a detached placement slice in frozen line order.
-func (v *VList) Lines() []Line              { return slices.Clone(v.lines) }
+func (v *VList) Lines() []Line { return slices.Clone(v.lines) }
+
 // Materials returns a detached slice of placed line boxes and fixed kerns.
-func (v *VList) Materials() []Material      { return slices.Clone(v.material) }
+func (v *VList) Materials() []Material { return slices.Clone(v.material) }
+
 // Frozen returns the retained read-only content, sharing its stable font services.
 func (v *VList) Frozen() *khipu.FrozenKhipu { return v.frozen }
 
@@ -185,26 +188,26 @@ func nilService(value any) bool {
 // Negative LineGap is permitted; the 0.2em minimum still applies.
 func measure(text khipu.FrozenText) (ascent, descent, gap float64, err error) {
 	c := text.Context
-	if nilService(c.Params.Font) || nilService(c.Scale) || c.EmSize <= 0 || c.EmSize >= dimen.Fil {
+	if !c.Params.Font.Valid() {
 		return 0, 0, 0, fmt.Errorf("invalid retained font, scale or em size")
 	}
-	m, err := c.Params.Font.Metrics()
+	m, err := c.Params.Font.Face().Metrics()
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	unit := c.Scale.ToDU(1)
+	unit := c.Params.Font.Scale().ToDU(1)
 	if m.UnitsPerEm == 0 || math.IsNaN(unit) || math.IsInf(unit, 0) || unit <= 0 {
 		return 0, 0, 0, fmt.Errorf("invalid font metrics or scale")
 	}
-	a := c.Scale.ToDU(m.Ascent) / float64(dimen.BP)
-	d := -c.Scale.ToDU(m.Descent) / float64(dimen.BP)
-	g := c.Scale.ToDU(m.LineGap) / float64(dimen.BP)
+	a := c.Params.Font.Scale().ToDU(m.Ascent) / float64(dimen.BP)
+	d := -c.Params.Font.Scale().ToDU(m.Descent) / float64(dimen.BP)
+	g := c.Params.Font.Scale().ToDU(m.LineGap) / float64(dimen.BP)
 	for _, value := range []float64{a, d, g} {
 		if !dimension(math.Abs(value)) {
 			return 0, 0, 0, fmt.Errorf("font metric outside finite dimension range")
 		}
 	}
-	return math.Max(0, a), math.Max(0, d), math.Max(g, c.EmSize.Points()*.2), nil
+	return math.Max(0, a), math.Max(0, d), math.Max(g, c.Params.Font.EmSize().Points()*.2), nil
 }
 
 func validateOptions(options Options) error {

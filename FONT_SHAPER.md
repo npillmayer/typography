@@ -29,12 +29,13 @@ a separate responsibility. Implementing a HarfBuzz backend is not required.
 ## Current conversion points
 
 The [font contract](../khipu/contracts/font_api.go) exposes metrics and scaling.
-`ShapeParams.Font` and resolved run styles carry that interface. Khipu resolves
-styles and retains faces but does not extract a concrete OpenType font.
+Resolved run styles carry that interface and an em size. Khipu constructs an
+immutable FontInstance after resolution; ShapeParams.Font retains that binding.
+Khipu does not extract a concrete OpenType font.
 
 The actual conversion happens in typography's
 [OpenType stream adapter](adapter/opentype/stream.go): `Stream.Shape` asserts
-`p.Font.(*Face)` and passes the face's private `font *ot.Font` to `otshape.Params`.
+`p.Font.Face().(*Face)` and passes the face's private `font *ot.Font` to `otshape.Params`.
 The adapter's [coverage service](adapter/opentype/loading.go) independently
 asserts the same face implementation before querying a glyph. The synthetic
 shaper has its own type check. Today these failures can be discovered only when
