@@ -7,7 +7,9 @@ import (
 
 	"github.com/npillmayer/cords/styled"
 	"github.com/npillmayer/khipu"
+	"github.com/npillmayer/khipu/contracts"
 	"github.com/npillmayer/khipu/dimen"
+	"github.com/npillmayer/khipu/helpers"
 	"github.com/npillmayer/typography/glyphing/paragraph"
 	"github.com/npillmayer/typography/layout"
 )
@@ -54,8 +56,8 @@ func TestLayoutPublicationDetachesInputs(t *testing.T) {
 	}
 	empty, err := paragraph.Run(t.Context(), paragraph.Input{Text: styled.TextFromString("")}, paragraph.Params{
 		Constraints: paragraph.Constraints{Width: 100 * dimen.BP}, Breaker: paragraph.FirstFit,
-		Assembly: paragraph.Options{Policy: paragraph.ProofCompatibility, DefaultEmSize: 10 * dimen.BP},
-	}, khipu.Config{})
+		Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight}, LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.NormalHeight}},
+	}, khipu.Config{Streaming: &khipu.StreamingConfig{Resolver: helpers.DefaultStyleResolver{}, Defaults: contracts.ResolvedRunStyle{Font: helpers.NewSyntheticFont(), EmSize: 10 * dimen.BP}, NewShaper: func() (contracts.StreamingShaper, error) { return helpers.NewSyntheticStreamingShaper(8) }}})
 	if err != nil {
 		t.Fatal(err)
 	}

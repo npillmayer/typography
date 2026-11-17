@@ -51,7 +51,7 @@ const (
 // its resolver. LineLayout supplies CSS-inspired line-height separately from shaping. Vertical
 // alignment for atomic boxes is supplied separately through LayoutRequest.
 // Both breaker and assembly policy are explicit. CSSLineHeight requires LineLayout
-// and explicit Streaming defaults/resolver; ProofCompatibility requires DefaultEmSize.
+// and explicit Streaming defaults/resolver.
 type Params struct {
 	Constraints Constraints
 	Breaker     Breaker
@@ -118,12 +118,11 @@ type Result struct {
 // has no object geometry. Use Prepare/Layout for mixed or reusable layout.
 // It creates a fresh owner for every invocation and freezes before returning or
 // running another breaker. No elastic paragraph/owner is published. Config uses
-// khipu's existing service contracts (including hyphenation); a zero Config uses
-// its synthetic backend. Non-nil Streaming is fully supplied by the caller and
-// its factory must return fresh exclusive shapers. Config.Params governs encoder
+// khipu's existing service contracts (including hyphenation). CSS assembly
+// requires explicit streaming font/size/resolver defaults. Streaming is supplied
+// by the caller; its factory must return fresh exclusive shapers. Config.Params governs encoder
 // policy; line geometry is the selected breaker's rectangular default profile.
-// For ProofCompatibility supply a matching Assembly.DefaultEmSize for metricless
-// lines. CSSLineHeight instead uses Streaming.Defaults as its font/size strut.
+// CSSLineHeight uses Streaming.Defaults as its font/size strut.
 //
 // Services/styles must obey their immutable-lifetime contracts and remain usable
 // for retained results. Run does not acquire fonts or rendering services. Errors
@@ -202,12 +201,7 @@ func finishLayout(ctx context.Context, owner *khipu.Khipukamayuq, encoded *khipu
 	if err := ctx.Err(); err != nil {
 		return fail(StageFreeze, err)
 	}
-	var vlist *assembly
-	if params.Assembly.Policy == CSSLineHeight {
-		vlist, err = assembleLineHeight(ctx, frozen, params.LineLayout, text, config, atomics)
-	} else {
-		vlist, err = assembleCompatibility(ctx, frozen, params.Assembly, atomics)
-	}
+	vlist, err := assembleLineHeight(ctx, frozen, params.LineLayout, text, config, atomics)
 	if err == nil {
 		err = placeAtomics(ctx, vlist, atomics)
 	}
@@ -229,22 +223,13 @@ func validateParams(params Params, text styled.Text, config khipu.Config) (Param
 	if params.Constraints.Width < 0 || params.Constraints.Width >= dimen.Fil || (params.Breaker != FirstFit && params.Breaker != KnuthPlass) {
 		return params, invalidInput("width or breaker")
 	}
-	if params.Assembly.Policy == CSSLineHeight {
-		if params.Assembly.DefaultEmSize != 0 {
-			return params, invalidInput("CSS strut uses Streaming.Defaults; omit compatibility DefaultEmSize")
-		}
-		if err := validateLineLayout(params.LineLayout, text, config); err != nil {
-			return params, fmt.Errorf("%w: %w: %w", ErrInvalidInput, contracts.ErrIllegalArguments, err)
-		}
-		params.LineLayout = params.LineLayout.Clone()
-	} else {
-		if params.LineLayout != nil {
-			return params, invalidInput("line-height values require CSSLineHeight")
-		}
-		if err := validateOptions(params.Assembly); err != nil {
-			return params, fmt.Errorf("%w: %w: %w", ErrInvalidInput, contracts.ErrIllegalArguments, err)
-		}
+	if params.Assembly.Policy != CSSLineHeight {
+		return params, invalidInput("assembly requires CSSLineHeight")
 	}
+	if err := validateLineLayout(params.LineLayout, text, config); err != nil {
+		return params, fmt.Errorf("%w: %w: %w", ErrInvalidInput, contracts.ErrIllegalArguments, err)
+	}
+	params.LineLayout = params.LineLayout.Clone()
 	return params, nil
 }
 

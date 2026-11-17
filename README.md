@@ -18,7 +18,7 @@ the former root resolver, paragraph or adapter/opentype APIs.
 | [font](font/README.md) | Detached identity, retained-resource capability and font-source contract |
 | [fontresource](fontresource/README.md) | Immutable bounded bytes, provenance and version-1 resource IDs |
 | [style](style/README.md) | Document styles, typography values, paint and UTF-8 span projections |
-| [layout](layout/README.md) | Completed immutable lines, boxes, material and atomic placements |
+| [layout](layout/README.md) | Completed immutable geometry and reusable VItem/ElasticVList data |
 
 Shared packages import neither active branch. Glyphing imports no rendering
 package; rendering imports no glyphing package. Generic code imports no concrete
@@ -72,13 +72,21 @@ Paint does not enter styled.Text. Equivalent typography coalesces across paint
 boundaries while feature domains remain intact. ItemizeWithMetadata returns text,
 font bindings and shaping metadata only; use style.ProjectPaint separately.
 
-Paragraph assembly preserves both policies, fixed atomic geometry, signed
-positions, empty-line handling and fractional operation order. VLists copy
+The [VList contract](doc/VLIST_CONTRACT.md) is CSSLineHeight only, with
+tycli/documentlayout as the primary integration. Line boxes include their leading;
+no additional interline/trailing gap is inserted. Compatibility assembly and frozen-only Assemble have been removed. Keep fixed atomic geometry, signed positions,
+empty-line handling and the current CSS fractional operation order. VLists copy
 geometry at publication/access and share frozen content. Rendering uses retained
 placements without metric queries, reshaping, rebreaking or restacking.
 
-Replay is application-owned. Resource IDs, wire values, glyph records and proof
-controls remain unchanged. This adds no page layout, font discovery, coverage
+`layout.Unbox(vlist)` recovers an immutable `ElasticVList` of full-height line
+items without remeasurement. Each `VItem` retains frozen horizontal content and
+local geometry independently of the VList. Surrounding block margins remain with
+the application. Unboxing has no context argument; restacking, rendering of the
+new items and stretch/shrink packing remain deferred.
+
+Replay is application-owned. Resource identities and CSS proof controls remain unchanged;
+current replay is CSS-only version 5 and rejects earlier formats. This adds no page layout, font discovery, coverage
 policy, rasterization or generalized paint model.
 
 ## Verification

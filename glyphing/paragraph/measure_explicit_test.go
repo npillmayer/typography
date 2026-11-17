@@ -77,7 +77,7 @@ func TestExplicitMeasurementLayoutReuse(t *testing.T) {
 				}
 				var previous *paragraph.Result
 				var retained snapshot
-				for range 2 {
+				for iteration := 0; iteration < 2; iteration++ {
 					out, err := p.Layout(t.Context(), paragraph.LayoutRequest{Params: params(breaker, 15*dimen.BP)})
 					if err != nil {
 						t.Fatal(err)
@@ -96,8 +96,8 @@ func TestExplicitMeasurementLayoutReuse(t *testing.T) {
 						t.Fatal("retained output changed")
 					}
 					previous, retained = out, got
-					if calls.shape != base.shape+2 || calls.hyphenate != base.hyphenate+1 || calls.resolve != base.resolve {
-						t.Fatal("repeated preparation services", base, calls)
+					if calls.shape != base.shape+2 || calls.hyphenate != base.hyphenate+1 || calls.resolve != base.resolve+iteration+1 {
+						t.Fatal("reshaped text or unexpected CSS source-style resolution", base, calls)
 					}
 				}
 			}

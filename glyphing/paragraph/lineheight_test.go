@@ -51,7 +51,7 @@ func TestLineHeightExactGeometryAndInheritance(t *testing.T) {
 				t.Fatalf("%s %+v: box %+v", b, tc.h, got)
 			}
 			for i, l := range out.VList.Lines() {
-				if l.Top != float64(i)*tc.height || l.Baseline != float64(i)*tc.height+tc.baseline || l.Height != tc.height || l.Gap != 0 {
+				if l.Top != float64(i)*tc.height || l.Baseline != float64(i)*tc.height+tc.baseline || l.Height != tc.height {
 					t.Fatalf("line %+v", l)
 				}
 			}
@@ -182,7 +182,7 @@ func TestLineHeightValidationAndEmpty(t *testing.T) {
 	cfg := synthetic()
 	for _, change := range []func(*paragraph.Params){
 		func(p *paragraph.Params) { p.LineLayout = nil },
-		func(p *paragraph.Params) { p.Assembly.DefaultEmSize = dimen.BP },
+		func(p *paragraph.Params) { p.Assembly.Policy = "proof-compatibility-v1" },
 		func(p *paragraph.Params) { p.LineLayout.Default = factor(-1) },
 		func(p *paragraph.Params) { p.LineLayout.Default = factor(math.Inf(1)) },
 		func(p *paragraph.Params) { p.LineLayout.Default = factor(math.NaN()) },
@@ -376,7 +376,7 @@ func TestLineHeightOverrideGapsKeepDefaultContribution(t *testing.T) {
 					t.Fatal(err)
 				}
 				lines := out.VList.Lines()
-				if len(lines) != 1 || lines[0].Height != tc.height || lines[0].Baseline != tc.baseline || lines[0].Gap != 0 {
+				if len(lines) != 1 || lines[0].Height != tc.height || lines[0].Baseline != tc.baseline {
 					t.Fatalf("line geometry = %+v; want height %g, baseline %g, no gap", lines, tc.height, tc.baseline)
 				}
 				if box := out.VList.Box(); box.Extent != tc.height || box.Baseline != tc.baseline || !box.HasBaseline {

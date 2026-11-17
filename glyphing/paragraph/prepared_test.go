@@ -170,15 +170,7 @@ func TestPreparedAtomicGeometryOracles(t *testing.T) {
 					}
 				}
 			}
-			if v, err := paragraph.Assemble(t.Context(), out.Frozen, params(breaker, 100*dimen.BP).Assembly); v != nil || !errors.Is(err, khipu.ErrUnsupportedPolicy) {
-				t.Fatal("frozen-only assembly accepted missing geometry", v, err)
-			}
-			// Compatibility preserves its own 2bp gap and text/fallback metrics.
-			request.Params = params(breaker, 100*dimen.BP)
-			out, err = p.Layout(t.Context(), request)
-			if err != nil || out.VList.Box().Baseline != 17 || out.VList.Box().Extent != 21 {
-				t.Fatal(out, err)
-			}
+
 		}
 	}
 }

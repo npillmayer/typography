@@ -19,7 +19,7 @@ import (
 )
 
 func params(b paragraph.Breaker, w dimen.DU) paragraph.Params {
-	return paragraph.Params{Constraints: paragraph.Constraints{Width: w}, Breaker: b, Assembly: paragraph.Options{Policy: paragraph.ProofCompatibility, DefaultEmSize: 10 * dimen.BP}}
+	return paragraph.Params{Constraints: paragraph.Constraints{Width: w}, Breaker: b, Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight}, LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.NormalHeight}}}
 }
 func synthetic() khipu.Config {
 	return khipu.Config{Streaming: &khipu.StreamingConfig{
@@ -145,7 +145,7 @@ func TestInjectedHyphenationAndEmptyInput(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if out.Frozen.LineCount() != 2 || out.VList.Box().Extent != 24 {
+		if out.Frozen.LineCount() != 2 || out.VList.Box().Extent != 20 {
 			t.Fatal("hyphenation not composed", out.VList.Box())
 		}
 		replacement := false
@@ -156,7 +156,7 @@ func TestInjectedHyphenationAndEmptyInput(t *testing.T) {
 		if !replacement {
 			t.Fatal("missing replacement provenance")
 		}
-		empty, err := paragraph.Run(t.Context(), paragraph.Input{}, params(b, 30*dimen.BP), khipu.Config{})
+		empty, err := paragraph.Run(t.Context(), paragraph.Input{}, params(b, 30*dimen.BP), synthetic())
 		if err != nil || empty.VList == nil || empty.Frozen.SourceLen() != 0 {
 			t.Fatal("empty paragraph", err)
 		}
