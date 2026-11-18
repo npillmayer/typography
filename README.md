@@ -118,7 +118,7 @@ module and sibling tytui. Root dependency audits enforce the branch boundaries.
 Unit tests stay with their owners; [integration](integration/README.md) contains cross-phase
 tests. Real font fixtures remain in sibling opentype; no fonts are copied.
 
-The [internal flow experiment](internal/flowexperiment/README.md) retains historical
+The [archived flow experiment](doc/history/flowexperiment/README.md) retains historical
 E1–E3 evidence. Current production measurement commands and metric contracts are
 in [the P6 harness guide](doc/flow-cost/README.md); historical evidence is not
 regenerated as part of routine verification.

@@ -18,17 +18,18 @@ The expected frequent case is equal-width flow across exactly two frames (the
 90% share is a workload assumption to evaluate). Prioritize frozen-line reuse for
 that case, guarded by unchanged layout-affecting inputs rather than width alone.
 
-The [internal flow experiment](../internal/flowexperiment/README.md) specifies
+The [archived flow experiment](history/flowexperiment/README.md) preserves
 three stages: equal-width splitting, fixed-prefix continuation correctness, and
-cost/decision measurements. E1 now implements the internal equal-width experiment
-using existing immutable fragments; see its [evidence and limitations](../internal/flowexperiment/RESULTS.md).
-E2 now tests a bounded first-fit continuation against a constrained reference,
-using temporary owning-package overlays. Its [results](../internal/flowexperiment/E2_RESULTS.md)
+cost/decision measurements. The active package is retired; its evidence and inert
+source snapshots remain available for historical review. E1 implemented the internal equal-width experiment
+using existing immutable fragments; see its [evidence and limitations](history/flowexperiment/RESULTS.md).
+E2 tested a bounded first-fit continuation against a constrained reference,
+using temporary owning-package overlays. Its [results](history/flowexperiment/E2_RESULTS.md)
 distinguish suffix-only breakpoint search from the still-complete binding and
 materialization pipeline, and record upstream bidi preparation rejection and
 progress limits. Some mixed RTL input stalls before continuation; cancellation
 cannot interrupt the synchronous bidi resolver. That upstream fix remains deferred.
-E3 now records [cost comparisons and the decision](../internal/flowexperiment/E3_RESULTS.md):
+E3 recorded [cost comparisons and the decision](history/flowexperiment/E3_RESULTS.md):
 compatible equal-width fragmentation is substantially cheaper in the bounded
 measurements, while narrower continuation still binds, freezes and assembles the
 whole paragraph. Those are historical experiment conclusions; P1–P6 now provide
@@ -104,10 +105,13 @@ From the typography root, regenerate the image with:
 dot -Tsvg doc/FLOW_CONTINUATION.dot -o doc/FLOW_CONTINUATION.svg
 ```
 
-The implementation seams are the [owner-bound checkpoint](../internal/flowexperiment/testdata/e2/khipu.go.txt),
-[seeded breaker entry](../internal/flowexperiment/e2_overlay.py), and
-[continuation width schedule](../internal/flowexperiment/testdata/e2/paragraph.go.txt).
-They exist only in experimental overlays. Here, resumability means a fresh call
+The historical prototype seams are the [owner-bound checkpoint](history/flowexperiment/testdata/e2/khipu.go.txt),
+[seeded breaker entry](history/flowexperiment/e2_overlay.py.txt), and
+[continuation width schedule](history/flowexperiment/testdata/e2/paragraph.go.txt).
+Those snapshots are retired overlays. Current production implementations are
+[khipu checkpoints](../../khipu/checkpoint.go),
+[seeded first-fit](../../khipu/linebreak/firstfit/continue.go), and
+[typography continuation](../glyphing/paragraph/flow.go). Here, resumability means a fresh call
 with retained context; it does not mean resuming a suspended Knuth–Plass search
 or permitting concurrent calls on one preparation. Shared preparation and services
 still require serialized use. NoHyphenation makes ordinary checkpoints sufficient
@@ -848,7 +852,7 @@ processing on copies; crossing a frame boundary does not reset paragraph
 direction or discard an isolate that started in A. The prototype currently
 processes the complete combined path, then retains the original A fragment.
 
-The [upstream bidi rejection and stall cases](../internal/flowexperiment/E2_RESULTS.md#upstream-bidi-limitations)
+The [upstream bidi rejection and stall cases](history/flowexperiment/E2_RESULTS.md#upstream-bidi-limitations)
 are separate initial-preparation defects. Ordinary `paragraph.Prepare` rejects
 one mixed-markup fixture with `invalid logical bidi segment`; other documented
 mixed RTL inputs stall in the bidi parser. Both symptoms were reproduced without

@@ -64,10 +64,10 @@ any unplaced tail from the new result after line `N`. The benchmark named
 `relayout-narrow` is the separate whole-paragraph-at-B-width cost comparator;
 it is not the continuation algorithm.
 
-![Checkpoint continuation: retained preparation and locked A breaks feed suffix search; the prototype reconstructs a complete result but publishes original A with new B and tail.](../../doc/FLOW_CONTINUATION.svg)
+![Checkpoint continuation: retained preparation and locked A breaks feed suffix search; the prototype reconstructs a complete result but publishes original A with new B and tail.](../../FLOW_CONTINUATION.svg)
 
-[Graphviz DOT source](../../doc/FLOW_CONTINUATION.dot) and
-[the full model and regeneration command](../../doc/FLOW.md#checkpoint-based-continuation-the-working-model).
+[Graphviz DOT source](../../FLOW_CONTINUATION.dot) and
+[the full model and regeneration command](../../FLOW.md#checkpoint-based-continuation-the-working-model).
 The diagram illustrates the resumed candidate at an interior cut. With no
 accepted lines, search starts at the beginning; when all lines fit A, the initial
 result is reused without continuation.

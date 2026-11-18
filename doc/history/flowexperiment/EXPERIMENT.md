@@ -6,13 +6,13 @@ E3 records costs and a decision report; the upstream bidi fix remains deferred.
 The experiment stays isolated. Production P1–P6 are implemented across
 khipu, typography and tytui: geometry reuse, checkpoint continuation, retained
 rendering, bounded `Document.LayoutFlow` / `tycli --frames`, and production cost
-verification. See [FLOW.md](../../doc/FLOW.md) and the
-[production cost report](../../doc/FLOW_COSTS.md). Production packages do not
+verification. See [FLOW.md](../../FLOW.md) and the
+[production cost report](../../FLOW_COSTS.md). Production packages do not
 import this experiment. The overlay generator follows the shared P2 scan while keeping its
 experimental controls out of normal builds; recorded E3 timings remain historical.
 See [E1 evidence](RESULTS.md),
 [E2 evidence and upstream bidi limits](E2_RESULTS.md), [E3 measurements and decision](E3_RESULTS.md),
-and the underlying investigation in [FLOW.md](../../doc/FLOW.md).
+and the underlying investigation in [FLOW.md](../../FLOW.md).
 
 The remaining sections retain the experiment's staged design and reproduction
 instructions. Their references to proposed production work describe the experiment

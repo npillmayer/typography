@@ -1,0 +1,234 @@
+{
+  "source_commit": "3cd477a83135d70874fc585cba91c3e4e1f057dd",
+  "note": "Original experiment snapshots; only Markdown link targets changed. Go and Python sources are inert .txt files. Raw measurements and metadata are unchanged.",
+  "files": [
+    {
+      "original": "internal/flowexperiment/E2_RESULTS.md",
+      "archived": "doc/history/flowexperiment/E2_RESULTS.md",
+      "original_sha256": "cc0b0ec7fa8e9faab1bab6fc3cb12090a4d5f7ff6e6fae71e2ad118be825fd5e",
+      "archived_sha256": "cc0b0ec7fa8e9faab1bab6fc3cb12090a4d5f7ff6e6fae71e2ad118be825fd5e"
+    },
+    {
+      "original": "internal/flowexperiment/E3_RESULTS.md",
+      "archived": "doc/history/flowexperiment/E3_RESULTS.md",
+      "original_sha256": "ce513727de98dcbec60fee7880d517c9e789d3636e063f54acb6f3e199c68a8c",
+      "archived_sha256": "7719239a22a717c1d747aa55de4b38cd7c621e879dfdbefe5da71f6479a5fe86"
+    },
+    {
+      "original": "internal/flowexperiment/README.md",
+      "archived": "doc/history/flowexperiment/EXPERIMENT.md",
+      "original_sha256": "43bad07a56eecdc406c5923950ed6b77a102f13314dd3b8f339234df933ffccd",
+      "archived_sha256": "4ce2a7534539a4b0d77cb7aba9642717cfbdd385a97a4bdbb603cc704569ca0d"
+    },
+    {
+      "original": "internal/flowexperiment/RESULTS.md",
+      "archived": "doc/history/flowexperiment/RESULTS.md",
+      "original_sha256": "f2a4de5ee66ed67a7326b2ad87c5ba8fc14184e7b06c15ab9b3f1a21e2fe770b",
+      "archived_sha256": "f2a4de5ee66ed67a7326b2ad87c5ba8fc14184e7b06c15ab9b3f1a21e2fe770b"
+    },
+    {
+      "original": "internal/flowexperiment/audit_graph_test.go",
+      "archived": "doc/history/flowexperiment/audit_graph_test.go.txt",
+      "original_sha256": "fdec61a00cf9059654de711c469ef6581a911beec10c0ab6abad95bcaed6c7f3",
+      "archived_sha256": "fdec61a00cf9059654de711c469ef6581a911beec10c0ab6abad95bcaed6c7f3"
+    },
+    {
+      "original": "internal/flowexperiment/audit_load_test.go",
+      "archived": "doc/history/flowexperiment/audit_load_test.go.txt",
+      "original_sha256": "5695cf86613ffb550a612cd3d5d9c59c9a73dcb1ee4270b54d7414e0b083686d",
+      "archived_sha256": "5695cf86613ffb550a612cd3d5d9c59c9a73dcb1ee4270b54d7414e0b083686d"
+    },
+    {
+      "original": "internal/flowexperiment/boundary_test.go",
+      "archived": "doc/history/flowexperiment/boundary_test.go.txt",
+      "original_sha256": "b230e900621d1e98821445c5826e6287fb5b780603f2519719ca26e1c44e4bf4",
+      "archived_sha256": "b230e900621d1e98821445c5826e6287fb5b780603f2519719ca26e1c44e4bf4"
+    },
+    {
+      "original": "internal/flowexperiment/cases_test.go",
+      "archived": "doc/history/flowexperiment/cases_test.go.txt",
+      "original_sha256": "8cc4069ae3da348614616c2111034a2b011cd594570540b76ee79c33756bacd8",
+      "archived_sha256": "8cc4069ae3da348614616c2111034a2b011cd594570540b76ee79c33756bacd8"
+    },
+    {
+      "original": "internal/flowexperiment/doc.go",
+      "archived": "doc/history/flowexperiment/doc.go.txt",
+      "original_sha256": "35bc6c10ef70a3a8cd9ca764a2a90787c60b05b7fa7e703d0fb411edd34c963b",
+      "archived_sha256": "35bc6c10ef70a3a8cd9ca764a2a90787c60b05b7fa7e703d0fb411edd34c963b"
+    },
+    {
+      "original": "internal/flowexperiment/e2_overlay.py",
+      "archived": "doc/history/flowexperiment/e2_overlay.py.txt",
+      "original_sha256": "0a1103d5a575848200a8b87f0e54f679c1d647dab181c7099f6ac37a8d9f7c34",
+      "archived_sha256": "0a1103d5a575848200a8b87f0e54f679c1d647dab181c7099f6ac37a8d9f7c34"
+    },
+    {
+      "original": "internal/flowexperiment/e3_analyze.py",
+      "archived": "doc/history/flowexperiment/e3_analyze.py.txt",
+      "original_sha256": "36e5a5075876b147fb78d303335b971bf159bf144fbb5b6a5d9edfc224dc2cb6",
+      "archived_sha256": "36e5a5075876b147fb78d303335b971bf159bf144fbb5b6a5d9edfc224dc2cb6"
+    },
+    {
+      "original": "internal/flowexperiment/e3_analyze_test.py",
+      "archived": "doc/history/flowexperiment/e3_analyze_test.py.txt",
+      "original_sha256": "a6325fa59262423cead59d4efed02e1c6fd7ad96f37e4891beaf90ef7d296058",
+      "archived_sha256": "a6325fa59262423cead59d4efed02e1c6fd7ad96f37e4891beaf90ef7d296058"
+    },
+    {
+      "original": "internal/flowexperiment/e3_overlay.py",
+      "archived": "doc/history/flowexperiment/e3_overlay.py.txt",
+      "original_sha256": "8caac5b2ec87f754da1830e9a5941be4309cb551406a711dea413cf4cd5518ce",
+      "archived_sha256": "8caac5b2ec87f754da1830e9a5941be4309cb551406a711dea413cf4cd5518ce"
+    },
+    {
+      "original": "internal/flowexperiment/e3_record.py",
+      "archived": "doc/history/flowexperiment/e3_record.py.txt",
+      "original_sha256": "a9ae9c14acea5978b9e8556fa3f2f814c66f080cfc6d02905a37c2ddd7648895",
+      "archived_sha256": "a9ae9c14acea5978b9e8556fa3f2f814c66f080cfc6d02905a37c2ddd7648895"
+    },
+    {
+      "original": "internal/flowexperiment/guard_test.go",
+      "archived": "doc/history/flowexperiment/guard_test.go.txt",
+      "original_sha256": "fbfe60236840eb3b424f5a0792a0e1139eea3d60c16a46e1bff9c9fb8dd2d63b",
+      "archived_sha256": "fbfe60236840eb3b424f5a0792a0e1139eea3d60c16a46e1bff9c9fb8dd2d63b"
+    },
+    {
+      "original": "internal/flowexperiment/ownership_test.go",
+      "archived": "doc/history/flowexperiment/ownership_test.go.txt",
+      "original_sha256": "bc6b4adc7023bd020cd6e4740c72c232c53c4740dd0851de121c066e73829009",
+      "archived_sha256": "bc6b4adc7023bd020cd6e4740c72c232c53c4740dd0851de121c066e73829009"
+    },
+    {
+      "original": "internal/flowexperiment/split.go",
+      "archived": "doc/history/flowexperiment/split.go.txt",
+      "original_sha256": "d8d26d33e3629efc78e47ff728b2f4e95350a5f4a9d4aa7cba54d6b322508b65",
+      "archived_sha256": "d8d26d33e3629efc78e47ff728b2f4e95350a5f4a9d4aa7cba54d6b322508b65"
+    },
+    {
+      "original": "internal/flowexperiment/split_test.go",
+      "archived": "doc/history/flowexperiment/split_test.go.txt",
+      "original_sha256": "463535eabc6727a1e122abcd3b79334b25c5110c7504655df0318aa028dbe4e5",
+      "archived_sha256": "463535eabc6727a1e122abcd3b79334b25c5110c7504655df0318aa028dbe4e5"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e2/admission_probe_test.go.txt",
+      "archived": "doc/history/flowexperiment/testdata/e2/admission_probe_test.go.txt",
+      "original_sha256": "581e3b7ae204705b22cddd918f9529fd18de2c41a3bc93788158fdd04d2005c1",
+      "archived_sha256": "581e3b7ae204705b22cddd918f9529fd18de2c41a3bc93788158fdd04d2005c1"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e2/continuation_test.go.txt",
+      "archived": "doc/history/flowexperiment/testdata/e2/continuation_test.go.txt",
+      "original_sha256": "adb989e9b4944955780ed287225dce73ff24efdc35e88786d74fade39462bff7",
+      "archived_sha256": "adb989e9b4944955780ed287225dce73ff24efdc35e88786d74fade39462bff7"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e2/firstfit.go.txt",
+      "archived": "doc/history/flowexperiment/testdata/e2/firstfit.go.txt",
+      "original_sha256": "c2b08ac7d127db3f69559891e2a1196338e60e19971a9c91129323586078cc58",
+      "archived_sha256": "c2b08ac7d127db3f69559891e2a1196338e60e19971a9c91129323586078cc58"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e2/khipu.go.txt",
+      "archived": "doc/history/flowexperiment/testdata/e2/khipu.go.txt",
+      "original_sha256": "640d9906e494ff78022d2c4f4be727c5649ecae1a97c0e9173dff376fcd3f92c",
+      "archived_sha256": "640d9906e494ff78022d2c4f4be727c5649ecae1a97c0e9173dff376fcd3f92c"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e2/kp_test.go.txt",
+      "archived": "doc/history/flowexperiment/testdata/e2/kp_test.go.txt",
+      "original_sha256": "264189da355dbbcae12999b1b1223f8ef2c650c34413c5dbb8b38d7fc5361226",
+      "archived_sha256": "264189da355dbbcae12999b1b1223f8ef2c650c34413c5dbb8b38d7fc5361226"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e2/lifetime_test.go.txt",
+      "archived": "doc/history/flowexperiment/testdata/e2/lifetime_test.go.txt",
+      "original_sha256": "2446a32b472b6e22d71834b2158cf2e3c993ff14023ec05192c8b909b928b20a",
+      "archived_sha256": "2446a32b472b6e22d71834b2158cf2e3c993ff14023ec05192c8b909b928b20a"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e2/oracle_test.go.txt",
+      "archived": "doc/history/flowexperiment/testdata/e2/oracle_test.go.txt",
+      "original_sha256": "a6597bfc996098979801c60be5705d75096637b1196930b053d8cc3a62b170c8",
+      "archived_sha256": "a6597bfc996098979801c60be5705d75096637b1196930b053d8cc3a62b170c8"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e2/paragraph.go.txt",
+      "archived": "doc/history/flowexperiment/testdata/e2/paragraph.go.txt",
+      "original_sha256": "46acebb0ea82f654e02bdcaf800c4f83643c1859bae8ca52f67df175a3239029",
+      "archived_sha256": "46acebb0ea82f654e02bdcaf800c4f83643c1859bae8ca52f67df175a3239029"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e3/bench_test.go.txt",
+      "archived": "doc/history/flowexperiment/testdata/e3/bench_test.go.txt",
+      "original_sha256": "507d856e6f75357ab73ea088d1d2e108e04ff2929d9795ab6037f76b9f400638",
+      "archived_sha256": "507d856e6f75357ab73ea088d1d2e108e04ff2929d9795ab6037f76b9f400638"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e3/fixture_test.go.txt",
+      "archived": "doc/history/flowexperiment/testdata/e3/fixture_test.go.txt",
+      "original_sha256": "14e3c24be8f66a12eb80af30e92b4dacbd72ba2433de967f4962ffc4fe079f4d",
+      "archived_sha256": "14e3c24be8f66a12eb80af30e92b4dacbd72ba2433de967f4962ffc4fe079f4d"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e3/results/2026-11-18/README.md",
+      "archived": "doc/history/flowexperiment/testdata/e3/results/2026-11-18/README.md",
+      "original_sha256": "396701b7653c0ae19ef534058f2460d95468bc58505433b6ff0d564b8f0989ff",
+      "archived_sha256": "396701b7653c0ae19ef534058f2460d95468bc58505433b6ff0d564b8f0989ff"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e3/results/2026-11-18/environment.json",
+      "archived": "doc/history/flowexperiment/testdata/e3/results/2026-11-18/environment.json",
+      "original_sha256": "1d86a9c91f54d3d2108c8e0de92e83abda942503cd705ad52280c2c94cca5e34",
+      "archived_sha256": "1d86a9c91f54d3d2108c8e0de92e83abda942503cd705ad52280c2c94cca5e34"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e3/results/2026-11-18/pilot-large-real.log",
+      "archived": "doc/history/flowexperiment/testdata/e3/results/2026-11-18/pilot-large-real.log",
+      "original_sha256": "a61a34bbe8c8a4e22ca6c956685c62e17360c880660895115c8fe054df8dc6a6",
+      "archived_sha256": "a61a34bbe8c8a4e22ca6c956685c62e17360c880660895115c8fe054df8dc6a6"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e3/results/2026-11-18/sample-1.log",
+      "archived": "doc/history/flowexperiment/testdata/e3/results/2026-11-18/sample-1.log",
+      "original_sha256": "460d88891fea1e950e418db57b55232c45521f1592bb6ce65a0d99a56cf508cb",
+      "archived_sha256": "460d88891fea1e950e418db57b55232c45521f1592bb6ce65a0d99a56cf508cb"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e3/results/2026-11-18/sample-2.log",
+      "archived": "doc/history/flowexperiment/testdata/e3/results/2026-11-18/sample-2.log",
+      "original_sha256": "78bcd74e860b55f9d5f990baa0952e523973948fc285ba5fb6a9e630be97cfaa",
+      "archived_sha256": "78bcd74e860b55f9d5f990baa0952e523973948fc285ba5fb6a9e630be97cfaa"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e3/results/2026-11-18/sample-3.log",
+      "archived": "doc/history/flowexperiment/testdata/e3/results/2026-11-18/sample-3.log",
+      "original_sha256": "b39be64bea5244797e81772a237babd0d32d562c484a70acec12d7225edc4bfa",
+      "archived_sha256": "b39be64bea5244797e81772a237babd0d32d562c484a70acec12d7225edc4bfa"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e3/results/2026-11-18/sample-4.log",
+      "archived": "doc/history/flowexperiment/testdata/e3/results/2026-11-18/sample-4.log",
+      "original_sha256": "b37aa95df4642ce5897000ab88074d18cf8e28f6ce454ec2e1e486d045145cab",
+      "archived_sha256": "b37aa95df4642ce5897000ab88074d18cf8e28f6ce454ec2e1e486d045145cab"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e3/results/2026-11-18/sample-5.log",
+      "archived": "doc/history/flowexperiment/testdata/e3/results/2026-11-18/sample-5.log",
+      "original_sha256": "2f8df5a8c974d1f24b108cdbd571f332f31c754e10c197442629a3a7b65052d6",
+      "archived_sha256": "2f8df5a8c974d1f24b108cdbd571f332f31c754e10c197442629a3a7b65052d6"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e3/results/2026-11-18/summary.json",
+      "archived": "doc/history/flowexperiment/testdata/e3/results/2026-11-18/summary.json",
+      "original_sha256": "09dd0e85eac6d04f1f50c1165293012f0d15e824bce4a71d2478deb26eaf2440",
+      "archived_sha256": "09dd0e85eac6d04f1f50c1165293012f0d15e824bce4a71d2478deb26eaf2440"
+    },
+    {
+      "original": "internal/flowexperiment/testdata/e3/timing.go.txt",
+      "archived": "doc/history/flowexperiment/testdata/e3/timing.go.txt",
+      "original_sha256": "0c09db07cbd5419b2c97ab4991c84df8d9384effbcbf8d6bc2b494b766057128",
+      "archived_sha256": "0c09db07cbd5419b2c97ab4991c84df8d9384effbcbf8d6bc2b494b766057128"
+    }
+  ]
+}
