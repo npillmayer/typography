@@ -1,10 +1,14 @@
-# glyphing
+# Glyphing
 
-Font/style resolution and grapheme/script itemization for typesetting. This
-package consumes preloaded faces and injected nominal coverage. It neither
-loads/discovers fonts nor installs a shaper, and has no rendering dependency.
+A typesetter translates styled text input into glyphs, i.e. graphic representations
+of letters, ligatures, etc.  This translation is called "glyphing". This package
+will map styles (e.g. *italic*) to fonts (e.g. an oblique font face). And it
+will itemize input text into runs suitable for typesetting.
 
-## Select fonts and map styles
+This package consumes preloaded faces and injected nominal coverage. It neither
+loads/discovers fonts nor does it install a text-shaper, and has no rendering dependency.
+
+## Select Fonts and map Styles
 
 `NewStyleMapper(ctx, selectedFonts, coverage)` accepts a closed `SelectedFonts`
 table: exactly one `FaceEntry` per referenced resource ID, with no missing,
@@ -25,7 +29,7 @@ font and size for paragraph execution; khipu constructs `FontInstance` values
 from resolved runs. Concrete loading/coverage/streaming services live in
 [adapter/opentype](adapter/opentype/README.md).
 
-## Itemize without losing context
+## Itemize without losing Context
 
 `Itemize` returns `styled.Text` and `[]FontTextRun`. Each run records the selected
 resource and processed UTF-8 byte range. `ItemizeWithMetadata` adds shaping spans;
