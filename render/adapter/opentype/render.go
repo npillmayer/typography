@@ -20,7 +20,9 @@ import (
 )
 
 // Services owns an outline-parser cache for one rendering session. Use New or
-// a zero-valued pointer, never copy after use. Methods are concurrency-safe.
+// a nonnil pointer to a zero-value Services struct, such as &Services{} or
+// new(Services). A nil *Services is not supported. Do not copy after use.
+// Methods are concurrency-safe.
 // Releasing the service releases its cache; no global state or file I/O is used.
 type Services struct {
 	mu         sync.Mutex

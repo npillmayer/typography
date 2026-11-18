@@ -1,0 +1,50 @@
+package firstfit
+
+import (
+	"context"
+	"slices"
+
+	"github.com/npillmayer/khipu"
+)
+
+// FlowVisits distinguishes boundary validation from breakpoint search. A resumed
+// call checks prefix boundary indexes but searches only the suffix.
+type FlowVisits struct{ BoundaryChecks, Search, PrefixSearch int }
+type flowControl struct {
+	ctx    context.Context
+	prefix []int
+	resume bool
+	visits FlowVisits
+}
+
+// FlowBreak is an overlay-only first-fit entry. The reference scans the locked
+// prefix; the candidate seeds the same boundaries and starts after its last knot.
+// Both reuse the production loop for the suffix, with fresh trim/carry state.
+func FlowBreak(ctx context.Context, k *khipu.Khipu, geometry khipu.Params, prefix []int, resume bool) ([]int, FlowVisits, error) {
+	if ctx == nil {
+		return nil, FlowVisits{}, khipu.ErrIllegalArguments
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, FlowVisits{}, err
+	}
+	if !k.FlowNoHyphenation() {
+		return nil, FlowVisits{}, khipu.ErrUnsupportedPolicy
+	}
+	c := &flowControl{ctx: ctx, prefix: slices.Clone(prefix), resume: resume}
+	prev := -1
+	for _, at := range c.prefix {
+		if err := ctx.Err(); err != nil {
+			return nil, FlowVisits{}, err
+		}
+		c.visits.BoundaryChecks++
+		if at <= prev || at >= len(k.Kind) || k.Penalty[at] >= InfinityDemerits {
+			return nil, FlowVisits{}, khipu.ErrIllegalArguments
+		}
+		prev = at
+	}
+	breaks, err := flowBreakParagraph(k, geometry, NewDefaultParameters(), c)
+	if err != nil {
+		return nil, FlowVisits{}, err
+	}
+	return breaks, c.visits, nil
+}

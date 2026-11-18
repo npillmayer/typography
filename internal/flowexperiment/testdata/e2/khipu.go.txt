@@ -1,0 +1,105 @@
+package khipu
+
+import (
+	"context"
+	"slices"
+)
+
+// FlowCheckpoint is an E2-only ordinary-break checkpoint. Its preparation and
+// copied boundary list cannot be rebound to another owner. No elastic planes escape.
+type FlowCheckpoint struct {
+	owner    *Khipukamayuq
+	prepared *PreparedParagraph
+	prefix   []int
+}
+
+// FlowSupported deliberately excludes all discretionary policies from E2.
+func (p *PreparedParagraph) FlowSupported(owner *Khipukamayuq) bool {
+	return p != nil && p.owner == owner && p.hyphenation == NoHyphenation
+}
+
+// FlowCheckpointFor captures already chosen ordinary boundaries. Typography
+// supplies the prefix of a successfully frozen initial path, not source offsets.
+func (q *Khipukamayuq) FlowCheckpointFor(ctx context.Context, p *PreparedParagraph, prefix []int) (*FlowCheckpoint, error) {
+	if ctx == nil {
+		return nil, ErrIllegalArguments
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if q == nil || p == nil || p.owner != q {
+		return nil, ErrIllegalArguments
+	}
+	if !p.FlowSupported(q) {
+		return nil, ErrUnsupportedPolicy
+	}
+	prev := -1
+	for _, at := range prefix {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if at <= prev || at >= len(p.knots) || p.knots[at].Penalty >= MaxPenalty {
+			return nil, ErrIllegalArguments
+		}
+		for i := prev + 1; i < at; i++ {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			if p.knots[i].Penalty <= MaxMerit {
+				return nil, ErrIllegalArguments
+			}
+		}
+		prev = at
+	}
+	return &FlowCheckpoint{q, p, slices.Clone(prefix)}, nil
+}
+
+// FlowPrefix validates ownership without rescanning the prepared prefix. Only
+// the small boundary list is copied; checkpoint creation performs knot validation.
+func (q *Khipukamayuq) FlowPrefix(ctx context.Context, p *PreparedParagraph, c *FlowCheckpoint) ([]int, error) {
+	if ctx == nil {
+		return nil, ErrIllegalArguments
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if q == nil || c == nil || c.owner != q || c.prepared != p || p == nil || p.owner != q {
+		return nil, ErrIllegalArguments
+	}
+	return slices.Clone(c.prefix), nil
+}
+
+// FlowNoHyphenation prevents a breaker entry from assuming absent replacement carry.
+func (k *Khipu) FlowNoHyphenation() bool {
+	return k != nil && k.owner != nil && k.hyphenationPolicy && k.hyphenation == NoHyphenation
+}
+
+// FlowWork counts actual visits to the existing binding/materialization loops.
+// The trace is invocation-local and follows the owner's serialized-use contract.
+type FlowWork struct{ Bound, BoundPrefix, Materialized, MaterializedPrefix int }
+type flowTrace struct {
+	end  int
+	work *FlowWork
+}
+type flowTraceKey struct{}
+
+// FlowTraceContext installs invocation-local instrumentation for E2.
+func FlowTraceContext(ctx context.Context, end int, work *FlowWork) context.Context {
+	return context.WithValue(ctx, flowTraceKey{}, flowTrace{end, work})
+}
+func flowBound(ctx context.Context, i int) {
+	if t, ok := ctx.Value(flowTraceKey{}).(flowTrace); ok {
+		t.work.Bound++
+		if i <= t.end {
+			t.work.BoundPrefix++
+		}
+	}
+}
+func flowMaterialized(ctx context.Context, i int) {
+	if t, ok := ctx.Value(flowTraceKey{}).(flowTrace); ok {
+		t.work.Materialized++
+		if i <= t.end {
+			t.work.MaterializedPrefix++
+		}
+	}
+}

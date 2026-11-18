@@ -1,0 +1,205 @@
+package flowexperiment
+
+import (
+	"fmt"
+	"testing"
+
+	"github.com/npillmayer/khipu"
+	"github.com/npillmayer/typography/glyphing/paragraph"
+)
+
+// A single serial sink prevents elimination without retaining every iteration.
+var e3Sink any
+
+func e3Timing(b *testing.B, t paragraph.FlowTiming) {
+	n := float64(b.N)
+	b.ReportMetric(float64(t.Bind)/n, "bind-ns/op")
+	b.ReportMetric(float64(t.Break)/n, "break-ns/op")
+	b.ReportMetric(float64(t.Freeze)/n, "freeze-ns/op")
+	b.ReportMetric(float64(t.Assembly)/n, "assembly-ns/op")
+}
+
+func e3Work(b *testing.B, w paragraph.FlowWork) {
+	b.ReportMetric(float64(w.Bound), "bound/op")
+	b.ReportMetric(float64(w.BoundPrefix), "bound-prefix/op")
+	b.ReportMetric(float64(w.Materialized), "materialized/op")
+	b.ReportMetric(float64(w.MaterializedPrefix), "materialized-prefix/op")
+	b.ReportMetric(float64(w.Search), "search/op")
+	b.ReportMetric(float64(w.PrefixSearch), "search-prefix/op")
+	b.ReportMetric(float64(w.BoundaryChecks), "boundary-checks/op")
+	b.ReportMetric(float64(w.AssembledLines), "assembled-lines/op")
+}
+
+func e3Services(b *testing.B, before, after [7]int64, prepare, synthetic bool) {
+	if !prepare {
+		noBaseShaping(b, before, after)
+	}
+	for _, m := range []struct {
+		i    int
+		name string
+	}{{1, "factories/op"}, {2, "shapes/op"}, {3, "acceptance/op"}} {
+		b.ReportMetric(float64(after[m.i]-before[m.i])/float64(b.N), m.name)
+	}
+	if synthetic {
+		for _, m := range []struct {
+			i    int
+			name string
+		}{{0, "resolutions/op"}, {4, "metrics/op"}, {5, "scales/op"}, {6, "conversions/op"}} {
+			b.ReportMetric(float64(after[m.i]-before[m.i])/float64(b.N), m.name)
+		}
+	}
+}
+
+// Cold means a fresh logical/bidi/shaping preparation each time, with preloaded
+// stable font services and pre-itemized input. Disk I/O/parsing/itemization are
+// outside the measurement and are never presented as measured cold-font cost.
+func BenchmarkE3Prepare(b *testing.B) {
+	for _, backend := range []string{"synthetic", "gentium", "hebrew"} {
+		for _, words := range e3Sizes(backend) {
+			b.Run(e3Name(backend, words), func(b *testing.B) {
+				input, config, calls := e3Input(b, backend, words, false)
+				// Preflight warms the stable face's lazy caches, not paragraph state.
+				e3Sink = e3Prepare(b, input, config)
+				before := calls.snapshot()
+				b.ReportAllocs()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					e3Sink = e3Prepare(b, input, config)
+				}
+				b.StopTimer()
+				e3Services(b, before, calls.snapshot(), true, backend == "synthetic")
+			})
+		}
+	}
+}
+
+// Operations include A's cut search, checkpoint creation (where needed), full
+// result publication, B placement and tail validation. Relayout discards prefix
+// decisions and is a cost comparator only; it must not be used as a flow oracle.
+func BenchmarkE3Frames(b *testing.B) {
+	for _, backend := range []string{"synthetic", "gentium", "hebrew"} {
+		for _, words := range e3Sizes(backend) {
+			b.Run(e3Name(backend, words), func(b *testing.B) {
+				f := newE3Fixture(b, backend, words, false)
+				for _, percent := range []int{10, 50, 90} {
+					cut, height := f.cut(percent)
+					e3Admit(b, f, cut, height)
+					for _, op := range []string{"equal", "reference", "resumed", "relayout-equal", "relayout-narrow"} {
+						b.Run(fmt.Sprintf("P%d/%s", percent, op), func(b *testing.B) { e3Frames(b, f, cut, height, op) })
+					}
+				}
+			})
+		}
+	}
+}
+
+func e3Frames(b *testing.B, f *e3Fixture, cut int, height float64, op string) {
+	var timing paragraph.FlowTiming
+	ctx := paragraph.FlowTimingContext(b.Context(), &timing)
+	var work paragraph.FlowWork
+	before := f.calls.snapshot()
+	if op == "equal" {
+		f.calls.sealed.Store(true)
+		defer f.calls.sealed.Store(false)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		switch op {
+		case "equal":
+			out, err := splitEqual(ctx, f.initial.VList, f.key, frame{f.key, height}, frame{f.key, 30000})
+			if err != nil || out.status != complete || len(out.overfull) != 0 {
+				b.Fatal("equal", err)
+			}
+			e3Sink = out
+		case "reference", "resumed":
+			out, err := flowToFrames(ctx, f.prepared, f.seed, height, f.key.width*3/4, 30000, op == "resumed")
+			if err != nil || out.status != complete || len(out.overfull) != 0 {
+				b.Fatal(op, err)
+			}
+			work = out.work
+			e3Sink = out
+		default:
+			req, key := f.request, f.key
+			if op == "relayout-narrow" {
+				req.Params.Constraints.Width = key.width * 3 / 4
+				key.width = req.Params.Constraints.Width
+			}
+			work = paragraph.FlowWork{}
+			trace := khipu.FlowTraceContext(ctx, -1, &work.FlowWork)
+			out, err := f.prepared.Layout(trace, req)
+			if err != nil {
+				b.Fatal(op, err)
+			}
+			work.AssembledLines = len(out.VList.Lines())
+			split, err := splitEqual(ctx, out.VList, key, frame{key, height}, frame{key, 30000})
+			if err != nil || split.status != complete || len(split.overfull) != 0 {
+				b.Fatal(op, err)
+			}
+			e3Sink = split
+		}
+	}
+	b.StopTimer()
+	e3Timing(b, timing)
+	// Baseline search is not instrumented: do not invent a zero breaker count.
+	if op == "reference" || op == "resumed" || op == "equal" {
+		e3Work(b, work)
+	}
+	b.ReportMetric(float64(cut), "accepted-lines/op")
+	b.ReportMetric(100*float64(cut)/float64(len(f.initial.VList.Lines())), "accepted-percent")
+	e3Services(b, before, f.calls.snapshot(), false, f.backend == "synthetic")
+}
+
+// Exactly 100 source words remain, while the prefix grows from 0 to 9,900.
+// Core calls reuse a certified checkpoint; its creation is measured separately.
+// Complete frame operations above include that creation in every iteration.
+func BenchmarkE3FixedSuffix(b *testing.B) {
+	for _, words := range []int{100, 1000, 10000} {
+		b.Run(fmt.Sprintf("N%d", words), func(b *testing.B) {
+			f := newE3Fixture(b, "synthetic", words, true)
+			cut := (words - 100) / 10
+			cp, err := f.seed.Checkpoint(b.Context(), cut)
+			if err != nil {
+				b.Fatal(err)
+			}
+			line, ok := f.initial.Frozen.Line(cut)
+			if !ok || f.initial.Frozen.SourceLen()-line.Source.Start != 299 {
+				b.Fatal("suffix is not exactly 100 words")
+			}
+			for _, op := range []string{"checkpoint", "reference", "resumed"} {
+				b.Run(op, func(b *testing.B) {
+					var timing paragraph.FlowTiming
+					ctx := paragraph.FlowTimingContext(b.Context(), &timing)
+					var work paragraph.FlowWork
+					before := f.calls.snapshot()
+					b.ReportAllocs()
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						if op == "checkpoint" {
+							out, err := f.seed.Checkpoint(ctx, cut)
+							if err != nil {
+								b.Fatal(err)
+							}
+							e3Sink = out
+						} else {
+							out, w, err := f.prepared.FlowContinue(ctx, f.seed, cp, f.key.width*3/4, op == "resumed")
+							if err != nil {
+								b.Fatal(err)
+							}
+							work = w
+							e3Sink = out
+						}
+					}
+					b.StopTimer()
+					e3Timing(b, timing)
+					if op != "checkpoint" {
+						e3Work(b, work)
+					}
+					b.ReportMetric(float64(words-100), "prefix-words/op")
+					b.ReportMetric(100, "suffix-words/op")
+					e3Services(b, before, f.calls.snapshot(), false, true)
+				})
+			}
+		})
+	}
+}

@@ -1,0 +1,54 @@
+package flowexperiment
+
+import (
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/npillmayer/khipu"
+	"github.com/npillmayer/khipu/contracts"
+	"github.com/npillmayer/khipu/dimen"
+	"github.com/npillmayer/typography/glyphing/paragraph"
+	"github.com/npillmayer/uax/bidi"
+)
+
+// Keep this pre-existing admission counterexample reproducible. An upstream
+// fix enables the continuation assertions automatically; failure is not an oracle
+// for correct bidi behavior and never counts as an E2 success.
+func TestE2MarkupAdmissionProbe(t *testing.T) {
+	input := textInput("aa bb \uFFFC אב גד הו 12 (xy) zz")
+	input.Atomics = []contracts.AtomicAnchor{{ID: 1, ByteOffset: 6}}
+	input.Markup = func(at uint64) int {
+		if at == 10 {
+			return bidi.MarkupRLI
+		}
+		if at == input.Text.Raw().Len() {
+			return bidi.MarkupPDI
+		}
+		return 0
+	}
+	p, err := paragraph.Prepare(t.Context(), input, khipu.PrepareOptions{}, flowConfig(new(serviceCalls)))
+	if err != nil {
+		var stage *paragraph.Error
+		if errors.As(err, &stage) && stage.Stage == paragraph.StagePrepare && strings.Contains(err.Error(), "invalid logical bidi segment") {
+			t.Skipf("unsupported before E2: ordinary paragraph.Prepare rejects this markup fixture: %v", err)
+		}
+		t.Fatal(err)
+	}
+	req := flowRequest(paragraph.FirstFit)
+	req.Atomics = []paragraph.AtomicBox{{ID: 1, BorderWidth: 5 * dimen.BP, BorderHeight: 22 * dimen.BP, Alignment: paragraph.AlignBottomMarginEdge}}
+	seed, err := p.FlowStart(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ha := seed.Initial().VList.Lines()[0].Height
+	ref, err := flowToFrames(t.Context(), p, seed, ha, 30*dimen.BP, 1000, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := flowToFrames(t.Context(), p, seed, ha, 30*dimen.BP, 1000, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compareFlow(t, seed.Initial(), ref, got, 1, 30*dimen.BP)
+}

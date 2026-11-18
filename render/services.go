@@ -1,5 +1,6 @@
-// Package render builds detached paragraph proofs from retained frozen content
-// and vertical placements, and maps glyph anchors to original paint sources.
+// Package render builds detached paragraph and line-range fragment proofs from
+// retained frozen content and vertical placements, and maps glyph anchors to
+// original paint sources.
 // Its backend boundary supplies retained outlines and visual order;
 // proof construction does not load fonts, measure lines or repeat layout.
 package render

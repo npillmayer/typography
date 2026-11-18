@@ -1,0 +1,273 @@
+package flowexperiment
+
+import (
+	"context"
+	"reflect"
+	"slices"
+	"testing"
+
+	"github.com/npillmayer/khipu"
+	"github.com/npillmayer/khipu/contracts"
+	"github.com/npillmayer/khipu/dimen"
+	"github.com/npillmayer/khipu/helpers"
+	"github.com/npillmayer/typography/glyphing/paragraph"
+	"github.com/npillmayer/typography/layout"
+)
+
+type flowResult struct {
+	a, b, tail   *layout.Fragment
+	status       outcome
+	overfull     []int // Index in the combined logical line sequence.
+	work         paragraph.FlowWork
+	result       *paragraph.Result // Complete candidate owner; A keeps the old owner.
+	suffixPolicy paragraph.Breaker
+}
+
+// flowToFrames is test-only orchestration, never a production dispatcher. All
+// boundaries are eligible. E2 always names its first-fit suffix policy explicitly.
+func flowToFrames(ctx context.Context, p *paragraph.Prepared, seed *paragraph.FlowSeed, ha float64, wb dimen.DU, hb float64, resume bool) (*flowResult, error) {
+	if ctx == nil || !bounded(ha) || !bounded(hb) || ha < 0 || hb < 0 {
+		return nil, contracts.ErrIllegalArguments
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if seed == nil || wb < 0 || wb >= dimen.Fil {
+		return nil, contracts.ErrIllegalArguments
+	}
+	initial := seed.Initial()
+	if initial == nil {
+		return nil, contracts.ErrIllegalArguments
+	}
+	whole, err := paragraph.Fragment(ctx, initial.VList)
+	if err != nil {
+		return nil, err
+	}
+	a, _, err := take(ctx, whole, ha, new(splitResult))
+	if err != nil {
+		return nil, err
+	}
+	cp, err := seed.Checkpoint(ctx, a.Range().End)
+	if err != nil {
+		return nil, err
+	}
+	result, work, err := p.FlowContinue(ctx, seed, cp, wb, resume)
+	if err != nil {
+		return nil, err
+	}
+	combined, err := paragraph.Fragment(ctx, result.VList)
+	if err != nil {
+		return nil, err
+	}
+	var remaining *layout.Fragment
+	at := a.Range().End
+	switch {
+	case at == 0:
+		remaining = combined
+	case at == combined.Range().End:
+		remaining, err = layout.NewFragment(ctx, combined.Frozen(), layout.LineRange{Start: at, End: at}, layout.Box{}, nil, nil, nil)
+	default:
+		_, remaining, err = paragraph.SplitFragment(ctx, combined, at)
+	}
+	if err != nil {
+		return nil, err
+	}
+	b, tail, err := take(ctx, remaining, hb, new(splitResult))
+	if err != nil {
+		return nil, err
+	}
+	out := &flowResult{a: a, b: b, tail: tail, result: result, work: work, suffixPolicy: paragraph.FirstFit}
+	for _, f := range []*layout.Fragment{a, b, tail} {
+		if err := checkLocalGeometry(ctx, f); err != nil {
+			return nil, err
+		}
+		for _, line := range f.Lines() {
+			if line.Horizontal.Width > line.Horizontal.TargetWidth {
+				out.overfull = append(out.overfull, line.OriginalIndex)
+			}
+		}
+	}
+	if tail.Range().Start != tail.Range().End {
+		out.status = moreFrames
+		if len(a.Lines()) == 0 && len(b.Lines()) == 0 {
+			out.status = noProgress
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func flowConfig(c *serviceCalls) khipu.Config {
+	params := khipu.DefaultParams()
+	params.SpaceShrinkPercent = 0
+	params.SpaceStretchPercent = 0
+	return khipu.Config{Params: &params, Streaming: &khipu.StreamingConfig{
+		Resolver: countedResolver{c}, Defaults: contracts.ResolvedRunStyle{Font: countedFont{helpers.NewSyntheticFont(), c}, EmSize: 10 * dimen.BP},
+		NewShaper: func() (contracts.StreamingShaper, error) {
+			c.hit(1)
+			s, e := helpers.NewSyntheticStreamingShaper(8)
+			return countedStream{s, c}, e
+		},
+	}}
+}
+func flowRequest(breaker paragraph.Breaker) paragraph.LayoutRequest {
+	return paragraph.LayoutRequest{Params: paragraph.Params{
+		Constraints: paragraph.Constraints{Width: 40 * dimen.BP}, Breaker: breaker, Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight},
+		LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.FactorHeight, Factor: 1}},
+	}, Horizontal: &paragraph.HorizontalLayout{}}
+}
+func flowSeed(t *testing.T, input paragraph.Input, req paragraph.LayoutRequest) (*paragraph.Prepared, *paragraph.FlowSeed, *serviceCalls) {
+	t.Helper()
+	c := new(serviceCalls)
+	p, err := paragraph.Prepare(t.Context(), input, khipu.PrepareOptions{Hyphenation: khipu.NoHyphenation}, flowConfig(c))
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed, err := p.FlowStart(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p, seed, c
+}
+func noBaseShaping(t *testing.T, before, after [7]int64) {
+	t.Helper()
+	for _, i := range []int{1, 2, 3} {
+		if before[i] != after[i] {
+			t.Fatalf("base production/acceptance repeated: %v -> %v", before, after)
+		}
+	}
+}
+
+func TestE2WidthsAndFixedPrefixes(t *testing.T) {
+	for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
+		p, seed, c := flowSeed(t, textInput("aa bb cc dd ee ff gg hh ii jj kk ll"), flowRequest(breaker))
+		initial := seed.Initial()
+		for _, cut := range []int{0, 1, 2, 3, 4} {
+			for _, width := range []dimen.DU{20, 30, 50, 55} {
+				if cut > len(initial.VList.Lines()) {
+					continue
+				}
+				ha := 0.0
+				if cut > 0 {
+					l := initial.VList.Lines()[cut-1]
+					ha = l.Top + l.Height
+				}
+				before := c.snapshot()
+				ref, err := flowToFrames(t.Context(), p, seed, ha, width*dimen.BP, 1000, false)
+				if err != nil {
+					t.Fatal(breaker, cut, width, err)
+				}
+				got, err := flowToFrames(t.Context(), p, seed, ha, width*dimen.BP, 1000, true)
+				if err != nil {
+					t.Fatal(breaker, cut, width, err)
+				}
+				noBaseShaping(t, before, c.snapshot())
+				compareFlow(t, initial, ref, got, cut, width*dimen.BP)
+				if cut < len(initial.VList.Lines()) {
+					w, r := got.work, ref.work
+					if w.PrefixSearch != 0 || w.Search+w.BoundPrefix != w.Bound || r.Search != r.Bound || r.PrefixSearch != w.BoundPrefix ||
+						w.Materialized != w.Bound || w.MaterializedPrefix != w.BoundPrefix || w.Bound != r.Bound || w.BoundaryChecks != cut {
+						t.Fatalf("incorrect work accounting: resumed=%+v reference=%+v", w, r)
+					}
+					t.Logf("prefix=%s cut=%d B=%s: search prefix/total=%d/%d reference=%d/%d bind=%d/%d materialize=%d/%d assemble=%d", breaker, cut, width*dimen.BP, w.PrefixSearch, w.Search, r.PrefixSearch, r.Search, w.BoundPrefix, w.Bound, w.MaterializedPrefix, w.Materialized, w.AssembledLines)
+				}
+			}
+		}
+	}
+}
+
+func compareFlow(t *testing.T, initial *paragraph.Result, ref, got *flowResult, cut int, width dimen.DU) {
+	t.Helper()
+	if got.status != ref.status || got.suffixPolicy != paragraph.FirstFit || !reflect.DeepEqual(got.overfull, ref.overfull) {
+		t.Fatal("policy/status changed")
+	}
+	compareCompleted(t, ref.result, got.result)
+	if got.a.Frozen() != initial.Frozen || len(got.a.Lines()) != cut {
+		t.Fatal("accepted prefix owner lost")
+	}
+	for i, l := range got.a.Lines() {
+		if l.Line != initial.VList.Lines()[i] || l.Line != got.result.VList.Lines()[i] {
+			t.Fatal("accepted geometry changed", i)
+		}
+	}
+	for k := 0; k < prefixKnots(initial, cut); k++ {
+		compareKnot(t, initial.Frozen, got.result.Frozen, k)
+	}
+	var oldAtomics, newAtomics []layout.AtomicPlacement
+	for _, a := range initial.VList.AtomicPlacements() {
+		if a.Line < cut {
+			oldAtomics = append(oldAtomics, a)
+		}
+	}
+	for _, a := range got.result.VList.AtomicPlacements() {
+		if a.Line < cut {
+			newAtomics = append(newAtomics, a)
+		}
+	}
+	if !slices.Equal(oldAtomics, newAtomics) || !slices.Equal(oldAtomics, got.a.AtomicPlacements()) {
+		t.Fatal("accepted atomic placement/order changed", oldAtomics, newAtomics, got.a.AtomicPlacements())
+	}
+	if got.b.Range().Start != cut || got.tail.Range().Start != got.b.Range().End || got.tail.Range().End != len(got.result.VList.Lines()) {
+		t.Fatal("lost suffix/tail")
+	}
+	for _, f := range []*layout.Fragment{got.b, got.tail} {
+		if f.Frozen() != got.result.Frozen {
+			t.Fatal("continuation owner lost")
+		}
+		for _, l := range f.Lines() {
+			if l.Horizontal.TargetWidth != width {
+				t.Fatal("wrong suffix width")
+			}
+		}
+	}
+	var end uint64
+	fills := 0
+	for i, l := range got.result.VList.Lines() {
+		if l.Horizontal.Source.Start != end {
+			t.Fatal("lost source correspondence")
+		}
+		end = l.Horizontal.Source.End
+		for k := l.Horizontal.FirstKnot; k < l.Horizontal.FirstKnot+l.Horizontal.KnotCount; k++ {
+			knot, _ := got.result.Frozen.Knot(k)
+			if knot.Material == khipu.ParagraphFillMaterial {
+				fills++
+				if i != len(got.result.VList.Lines())-1 {
+					t.Fatal("new paragraph fill at region cut")
+				}
+			}
+		}
+	}
+	if end != got.result.Frozen.SourceLen() || fills != 1 {
+		t.Fatal("lost source/trailer", end, fills)
+	}
+}
+func prefixKnots(r *paragraph.Result, cut int) int {
+	if cut == 0 {
+		return 0
+	}
+	l := r.VList.Lines()[cut-1].Horizontal
+	return l.FirstKnot + l.KnotCount
+}
+func compareCompleted(t *testing.T, a, b *paragraph.Result) {
+	t.Helper()
+	if !reflect.DeepEqual(a.BreakPositions, b.BreakPositions) || !reflect.DeepEqual(a.BidiRuns, b.BidiRuns) ||
+		a.VList.Box() != b.VList.Box() || !reflect.DeepEqual(a.VList.Lines(), b.VList.Lines()) ||
+		!reflect.DeepEqual(a.VList.Materials(), b.VList.Materials()) || !reflect.DeepEqual(a.VList.AtomicPlacements(), b.VList.AtomicPlacements()) || a.Frozen.KnotCount() != b.Frozen.KnotCount() {
+		t.Fatal("reference and resumed layout differ", a.BreakPositions, b.BreakPositions)
+	}
+	for k := 0; k < a.Frozen.KnotCount(); k++ {
+		compareKnot(t, a.Frozen, b.Frozen, k)
+	}
+}
+func compareKnot(t *testing.T, a, b *khipu.FrozenKhipu, k int) {
+	t.Helper()
+	x, xok := a.Knot(k)
+	y, yok := b.Knot(k)
+	tx, xt := a.CopyText(k)
+	ty, yt := b.CopyText(k)
+	if xok != yok || x != y || xt != yt || !reflect.DeepEqual(tx, ty) {
+		t.Fatal("frozen source/glyph/context changed", k)
+	}
+}

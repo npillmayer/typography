@@ -35,6 +35,7 @@ type ParagraphInput struct {
 }
 
 // Glyph holds physical drawing order and original source correspondence.
+// Line indexes the returned proof's local Lines; Knot indexes its frozen owner.
 // X/Y use big points; Scale converts font units to big points.
 // Path uses font units with downward Y.
 type Glyph struct {
@@ -90,8 +91,14 @@ func BuildParagraphProof(ctx context.Context, input ParagraphInput, services Ser
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	return buildRetainedProof(ctx, input, services, input.VList.Lines())
+}
+
+// Both public entry points supply validated immutable placements. Keep source
+// coordinates and frozen knot indexes intact while selecting only these lines.
+func buildRetainedProof(ctx context.Context, input ParagraphInput, services Services, placements []layout.Line) (*ParagraphProof, error) {
 	p := &ParagraphProof{}
-	for _, placement := range input.VList.Lines() {
+	for _, placement := range placements {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}

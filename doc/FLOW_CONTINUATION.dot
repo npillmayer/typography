@@ -1,0 +1,49 @@
+// Current E2/E3 prototype, not a proposed production API.
+// Regenerate from the typography root:
+// dot -Tsvg doc/FLOW_CONTINUATION.dot -o doc/FLOW_CONTINUATION.svg
+digraph checkpoint_continuation {
+    graph [
+        rankdir=TB,
+        bgcolor="white",
+        fontname="Helvetica",
+        fontsize=18,
+        label="Checkpoint continuation: keep A, rebreak the suffix for B",
+        labelloc=t,
+        pad=0.3,
+        nodesep=0.45,
+        ranksep=0.55
+    ];
+    node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=12,
+          color="#617284", fillcolor="#fff4db", margin="0.18,0.12"];
+    edge [fontname="Helvetica", fontsize=10, color="#617284", arrowsize=0.75];
+
+    prepared [fillcolor="#e5effb", color="#4676a5",
+        label="RETAINED PARAGRAPH p\nLogical material + shaped records\nOriginal styles, source coordinates and bidi context"];
+    frames [fillcolor="#f0f1f3",
+        label="DUMB FRAMES\nA: usable width WA, height HA\nB: usable width WB, height HB\nGeometry only; no new paragraph styles"];
+    initial [label="Initial complete layout at WA\nAccept N full-height lines fitting HA"];
+    checkpoint [fillcolor="#e5effb", color="#4676a5",
+        label="LOCKED CHECKPOINT\nOriginal owner + breaks [b1, ..., bN]\nN accepted lines; resume at knot bN + 1"];
+    resume [label="Bind fresh working material (whole paragraph)\nSeed breakpoint list with [b1, ..., bN]\nFirst-fit search only on the suffix at WB"];
+    complete [label="PROTOTYPE: reconstruct complete result\nFreeze / line-local bidi ordering / CSS assembly\nWA for lines 1..N; WB for subsequent lines\nUse copies of retained paragraph bidi state"];
+    output_a [fillcolor="#e7f3e9", color="#51835b",
+        label="FRAME A\nOriginal prefix fragment\nUnchanged content and full line-height"];
+    output_b [fillcolor="#e7f3e9", color="#51835b",
+        label="FRAME B + EXPLICIT UNPLACED TAIL\nNew result's suffix after line N\nPreserve full line-height; test B's height"];
+
+    { rank=same; prepared; frames; }
+    { rank=same; output_a; output_b; }
+    prepared -> frames [style=invis];
+    output_a -> output_b [style=invis];
+
+    prepared -> initial;
+    frames -> initial [label="WA, HA"];
+    initial -> checkpoint;
+    checkpoint -> resume;
+    prepared -> resume [label="reuse preparation", style=dashed, color="#4676a5"];
+    frames -> resume [label="WB"];
+    resume -> complete;
+    initial -> output_a [label="retain original first N lines", color="#51835b"];
+    complete -> output_b [label="take lines after N"];
+    frames -> output_b [label="HB", style=dashed];
+}

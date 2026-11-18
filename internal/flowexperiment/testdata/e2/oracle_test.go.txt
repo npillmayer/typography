@@ -1,0 +1,249 @@
+package flowexperiment
+
+import (
+	"context"
+	"reflect"
+	"testing"
+
+	"github.com/npillmayer/khipu"
+	"github.com/npillmayer/khipu/contracts"
+	"github.com/npillmayer/khipu/dimen"
+	"github.com/npillmayer/khipu/helpers"
+	"github.com/npillmayer/typography/glyphing/paragraph"
+	"github.com/npillmayer/uax/bidi"
+)
+
+// Each word is 10 bp and a space is 5 bp with no shrink. Enumerating this tiny
+// example independently prevents shared reference/resume mistakes from passing.
+func TestE2IndependentBreakOracle(t *testing.T) {
+	p, seed, _ := flowSeed(t, textInput("aa bb cc dd ee ff gg hh ii jj kk ll"), flowRequest(paragraph.FirstFit))
+	if !reflect.DeepEqual(seed.Initial().BreakPositions, []uint64{9, 18, 27, 35}) {
+		t.Fatal("initial oracle changed", seed.Initial().BreakPositions)
+	}
+	for _, tc := range []struct {
+		width dimen.DU
+		want  []uint64
+	}{
+		{20, []uint64{9, 12, 15, 18, 21, 24, 27, 30, 33, 35}},
+		{30, []uint64{9, 15, 21, 27, 33, 35}},
+		{55, []uint64{9, 21, 33, 35}},
+	} {
+		for _, resume := range []bool{false, true} {
+			got, err := flowToFrames(t.Context(), p, seed, 10, tc.width*dimen.BP, 1000, resume)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got.result.BreakPositions, tc.want) {
+				t.Fatal("independent oracle", tc.width, resume, got.result.BreakPositions, tc.want)
+			}
+		}
+	}
+}
+
+func TestE2ContextHeightAndObjects(t *testing.T) {
+	for _, tc := range []struct {
+		name, text string
+		dir        bidi.Direction
+		factor     float64
+	}{
+		{"RTL", "אב גד הו זח טי כל מנ ס", bidi.RightToLeft, 1},
+		{"mixed isolate", "abc \u2067אב 12 גד הו\u2069 (xyz) dd ee ff", bidi.LeftToRight, 1},
+		{"forced and trimmed", "  aa bb\n\ncc dd ee ff  ", bidi.LeftToRight, 1},
+		{"signed leading", "aa bb cc dd ee ff gg hh", bidi.LeftToRight, .25},
+		{"fractional", "aa bb cc dd ee ff gg hh", bidi.LeftToRight, .731},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := textInput(tc.text)
+			input.Direction = tc.dir
+			req := flowRequest(paragraph.FirstFit)
+			req.Params.LineLayout.Default.Factor = tc.factor
+			p, seed, c := flowSeed(t, input, req)
+			initial := seed.Initial()
+			ha := initial.VList.Lines()[0].Height
+			before := c.snapshot()
+			ref, err := flowToFrames(t.Context(), p, seed, ha, 30*dimen.BP, 1000, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := flowToFrames(t.Context(), p, seed, ha, 30*dimen.BP, 1000, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			compareFlow(t, initial, ref, got, 1, 30*dimen.BP)
+			noBaseShaping(t, before, c.snapshot())
+			if tc.name == "RTL" {
+				// Physical left-to-right knot traversal reverses all-RTL logical words.
+				pairs := 0
+				for _, l := range got.b.Lines() {
+					previous := uint64(^uint64(0))
+					count := 0
+					for i := l.Horizontal.FirstKnot; i < l.Horizontal.FirstKnot+l.Horizontal.KnotCount; i++ {
+						k, _ := got.b.Frozen().Knot(i)
+						if k.Kind != khipu.KTTextBox {
+							continue
+						}
+						if k.Source.Bytes.Start >= previous {
+							t.Fatal("suffix wasn't reordered per line")
+						}
+						previous = k.Source.Bytes.Start
+						count++
+					}
+					if count > 1 {
+						pairs++
+					}
+				}
+				if pairs == 0 {
+					t.Fatal("missing RTL multiword suffix oracle")
+				}
+			}
+		})
+	}
+	for _, dir := range []bidi.Direction{bidi.LeftToRight, bidi.RightToLeft} {
+		input := textInput("aa\n\uFFFC\uFFFC aa bb cc dd ee\n\uFFFC")
+		input.Direction = dir
+		input.Atomics = []contracts.AtomicAnchor{{ID: 7, ByteOffset: 3}, {ID: 2, ByteOffset: 6}, {ID: 9, ByteOffset: 25}}
+		req := flowRequest(paragraph.FirstFit)
+		req.Atomics = []paragraph.AtomicBox{
+			{ID: 7, Margin: paragraph.AtomicMargins{Right: -2 * dimen.BP}, Alignment: paragraph.AlignBottomMarginEdge},
+			{ID: 2, BorderWidth: 4 * dimen.BP, BorderHeight: 30 * dimen.BP, Margin: paragraph.AtomicMargins{Left: -2 * dimen.BP}, Alignment: paragraph.AlignBottomMarginEdge},
+			{ID: 9, Alignment: paragraph.AlignBottomMarginEdge},
+		}
+		p, seed, c := flowSeed(t, input, req)
+		before := c.snapshot()
+		ref, err := flowToFrames(t.Context(), p, seed, 10, 30*dimen.BP, 32, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := flowToFrames(t.Context(), p, seed, 10, 30*dimen.BP, 32, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		compareFlow(t, seed.Initial(), ref, got, 1, 30*dimen.BP)
+		if len(got.b.Lines()) != 1 || got.b.Lines()[0].Height != 32 || got.status != moreFrames {
+			t.Fatal("lost full atomic height/tail")
+		}
+		noBaseShaping(t, before, c.snapshot())
+	}
+}
+
+// The fake shaper accepts feature metadata without implementing a feature's
+// rendering effect. Retained contexts must still keep the original run domain.
+type flowFeatureStream struct{ countedStream }
+
+func (s flowFeatureStream) Shape(ctx context.Context, p contracts.ShapeParams, r contracts.RuneReader, o contracts.ShapeBufferOptions) error {
+	p.Features = nil
+	return s.countedStream.Shape(ctx, p, r, o)
+}
+func TestE2FeatureDomainsAndMixedSizes(t *testing.T) {
+	c := new(serviceCalls)
+	cfg := flowConfig(c)
+	cfg.Streaming.Defaults.Features = []contracts.ShapeFeature{{Tag: [4]byte{'l', 'i', 'g', 'a'}, Enabled: true, Value: 1, Start: 2, End: 10}}
+	cfg.Streaming.NewShaper = func() (contracts.StreamingShaper, error) {
+		c.hit(1)
+		s, e := helpers.NewSyntheticStreamingShaper(8)
+		return flowFeatureStream{countedStream{s, c}}, e
+	}
+	input := textInput("aa bb cc dd ee ff gg hh ii jj")
+	p, err := paragraph.Prepare(t.Context(), input, khipu.PrepareOptions{}, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed, err := p.FlowStart(t.Context(), flowRequest(paragraph.FirstFit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := c.snapshot()
+	ref, err := flowToFrames(t.Context(), p, seed, 10, 20*dimen.BP, 1000, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := flowToFrames(t.Context(), p, seed, 10, 20*dimen.BP, 1000, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compareFlow(t, seed.Initial(), ref, got, 1, 20*dimen.BP)
+	seen := false
+	for _, l := range got.b.Lines() {
+		for k := l.Horizontal.FirstKnot; k < l.Horizontal.FirstKnot+l.Horizontal.KnotCount; k++ {
+			tx, ok := got.b.Frozen().CopyText(k)
+			if ok && len(tx.Context.Params.Features) > 0 {
+				seen = true
+				if tx.Context.Params.Features[0].Start != 2 || tx.Context.Params.Features[0].End != 10 || tx.Context.Input.Bytes.Start != 0 {
+					t.Fatal("feature domain rebased to suffix")
+				}
+			}
+		}
+	}
+	if !seen {
+		t.Fatal("feature fixture missing")
+	}
+	noBaseShaping(t, before, c.snapshot())
+
+	input = textInput("aa\ncc dd ee ff gg hh")
+	input.Text, err = input.Text.Style(sized(20*dimen.BP), 3, input.Text.Raw().Len())
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := flowRequest(paragraph.FirstFit)
+	req.Params.Constraints.Width = 80 * dimen.BP
+	p, seed, c = flowSeed(t, input, req)
+	before = c.snapshot()
+	ref, err = flowToFrames(t.Context(), p, seed, 10, 40*dimen.BP, 20, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = flowToFrames(t.Context(), p, seed, 10, 40*dimen.BP, 20, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compareFlow(t, seed.Initial(), ref, got, 1, 40*dimen.BP)
+	if len(got.b.Lines()) != 1 || got.b.Lines()[0].Height != 20 || got.status != moreFrames {
+		t.Fatal("mixed size space/height lost")
+	}
+	noBaseShaping(t, before, c.snapshot())
+}
+
+func TestE2RetainedMarkupAndDefaultSkips(t *testing.T) {
+	for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
+		input := textInput("aa bb \uFFFC אב גד הו זח טי כל מנ")
+		input.Atomics = []contracts.AtomicAnchor{{ID: 1, ByteOffset: 6}}
+		markupCalls := 0
+		input.Markup = func(at uint64) int {
+			markupCalls++
+			if at == 10 {
+				return bidi.MarkupRLI
+			}
+			if at == input.Text.Raw().Len() {
+				return bidi.MarkupPDI
+			}
+			return 0
+		}
+		req := flowRequest(breaker)
+		req.Params.Constraints.Width = 60 * dimen.BP
+		req.Horizontal = nil
+		req.Atomics = []paragraph.AtomicBox{{ID: 1, BorderWidth: 5 * dimen.BP, BorderHeight: 22 * dimen.BP, Alignment: paragraph.AlignBottomMarginEdge}}
+		p, seed, c := flowSeed(t, input, req)
+		initial := seed.Initial()
+		calls := markupCalls
+		before := c.snapshot()
+		if calls == 0 || len(initial.VList.Lines()) < 2 {
+			t.Fatal("missing markup/suffix fixture")
+		}
+		req.Atomics[0].BorderHeight = dimen.Infinity
+		req.Params.LineLayout.Default.Factor = 99
+		ha := initial.VList.Lines()[0].Height
+		ref, err := flowToFrames(t.Context(), p, seed, ha, 30*dimen.BP, 1000, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := flowToFrames(t.Context(), p, seed, ha, 30*dimen.BP, 1000, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		compareFlow(t, initial, ref, got, 1, 30*dimen.BP)
+		if markupCalls != calls {
+			t.Fatal("paragraph bidi/markup prepared again")
+		}
+		noBaseShaping(t, before, c.snapshot())
+	}
+}

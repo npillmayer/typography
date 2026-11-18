@@ -168,7 +168,15 @@ func Run(ctx context.Context, input Input, params Params, config khipu.Config) (
 
 // finishLayout owns fresh bound material and publishes only a complete result.
 func finishLayout(ctx context.Context, owner *khipu.Khipukamayuq, encoded *khipu.Khipu, params Params, geometry khipu.Params, text styled.Text, config khipu.Config, runs []bidi.Segment, atomics map[contracts.AtomicID]AtomicBox) (*Result, error) {
-	fail := func(stage Stage, err error) (*Result, error) { return nil, &Error{stage, err} }
+	breaks, err := breakLayout(ctx, owner, encoded, params, geometry)
+	if err != nil {
+		return nil, err
+	}
+	return finishWithBreaks(ctx, owner, encoded, params, geometry, text, config, runs, atomics, breaks)
+}
+
+func breakLayout(ctx context.Context, owner *khipu.Khipukamayuq, encoded *khipu.Khipu, params Params, geometry khipu.Params) ([]int, error) {
+	fail := func(stage Stage, err error) ([]int, error) { return nil, &Error{stage, err} }
 	if err := ctx.Err(); err != nil {
 		return fail(StageBreak, err)
 	}
@@ -187,6 +195,15 @@ func finishLayout(ctx context.Context, owner *khipu.Khipukamayuq, encoded *khipu
 	if err != nil {
 		return fail(StageBreak, err)
 	}
+	if err := ctx.Err(); err != nil {
+		return fail(StageBreak, err)
+	}
+	return breaks, nil
+}
+
+// finishWithBreaks is shared by ordinary layout and checkpoint continuation.
+func finishWithBreaks(ctx context.Context, owner *khipu.Khipukamayuq, encoded *khipu.Khipu, params Params, geometry khipu.Params, text styled.Text, config khipu.Config, runs []bidi.Segment, atomics map[contracts.AtomicID]AtomicBox, breaks []int) (*Result, error) {
+	fail := func(stage Stage, err error) (*Result, error) { return nil, &Error{stage, err} }
 	if err := ctx.Err(); err != nil {
 		return fail(StageBreak, err)
 	}
@@ -210,6 +227,9 @@ func finishLayout(ctx context.Context, owner *khipu.Khipukamayuq, encoded *khipu
 	}
 	published, err := vlist.publish()
 	if err != nil {
+		return fail(StageAssemble, err)
+	}
+	if err := ctx.Err(); err != nil {
 		return fail(StageAssemble, err)
 	}
 	return &Result{Frozen: frozen, VList: published, BreakPositions: positions, BidiRuns: slices.Clone(runs), EncodedKnots: len(encoded.Kind), BreakCount: len(breaks)}, nil

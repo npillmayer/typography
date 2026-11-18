@@ -23,5 +23,6 @@ not numeric CSS weights; adapters perform conversion. Do not change the encoding
 without a versioned migration. A zero resource is empty; parsing validity belongs
 to the backend adapter.
 
-`resource_test.go` covers snapshots and identities; run `go test ./fontresource`.
+`resource_test.go` covers snapshots and identities; run `go test ./fontresource`
+and `go test -race ./fontresource` from the module root.
 See the [integration guide](../README.md) for pinned snapshots and replay policy.

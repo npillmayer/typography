@@ -1,0 +1,49 @@
+package flowexperiment
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/npillmayer/khipu"
+	"github.com/npillmayer/khipu/dimen"
+	"github.com/npillmayer/typography/glyphing/paragraph"
+)
+
+// Lock two KP lines whose second boundary differs from a fresh first-fit run.
+// The continuation must not silently replace the accepted KP path with its own.
+func TestE2DistinctKPPrefix(t *testing.T) {
+	c := new(serviceCalls)
+	cfg := flowConfig(c)
+	cfg.Params.SpaceStretchPercent = 50
+	cfg.Params.SpaceShrinkPercent = 33.3
+	p, err := paragraph.Prepare(t.Context(), textInput("aaaa a a aa aa aaaa aa aaa a a aaa"), khipu.PrepareOptions{}, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := flowRequest(paragraph.FirstFit)
+	ff, err := p.FlowStart(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Params.Breaker = paragraph.KnuthPlass
+	kp, err := p.FlowStart(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ff.Initial().BreakPositions, []uint64{9, 15, 23, 31, 34}) || !reflect.DeepEqual(kp.Initial().BreakPositions, []uint64{9, 20, 29, 34}) {
+		t.Fatal("distinct-prefix oracle changed")
+	}
+	before := c.snapshot()
+	second := kp.Initial().VList.Lines()[1]
+	ha := second.Top + second.Height
+	ref, err := flowToFrames(t.Context(), p, kp, ha, 30*dimen.BP, 1000, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := flowToFrames(t.Context(), p, kp, ha, 30*dimen.BP, 1000, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compareFlow(t, kp.Initial(), ref, got, 2, 30*dimen.BP)
+	noBaseShaping(t, before, c.snapshot())
+}

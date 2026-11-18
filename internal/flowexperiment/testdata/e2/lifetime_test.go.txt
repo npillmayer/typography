@@ -1,0 +1,299 @@
+package flowexperiment
+
+import (
+	"context"
+	"errors"
+	"math"
+	"reflect"
+	"runtime"
+	"testing"
+
+	"github.com/npillmayer/cords/styled"
+	"github.com/npillmayer/khipu"
+	"github.com/npillmayer/khipu/contracts"
+	"github.com/npillmayer/khipu/dimen"
+	"github.com/npillmayer/khipu/linebreak"
+	"github.com/npillmayer/khipu/linebreak/firstfit"
+	"github.com/npillmayer/typography/glyphing/paragraph"
+	"github.com/npillmayer/uax/bidi"
+)
+
+type flowFailureResolver struct {
+	countedResolver
+	fail  *bool
+	cause error
+}
+
+func (r flowFailureResolver) ResolveStyle(s styled.Style, d contracts.ResolvedRunStyle) (contracts.ResolvedRunStyle, error) {
+	if *r.fail {
+		return d, r.cause
+	}
+	return r.countedResolver.ResolveStyle(s, d)
+}
+
+func TestE2CancellationFailureAndRetry(t *testing.T) {
+	c := new(serviceCalls)
+	cfg := flowConfig(c)
+	failed := false
+	sentinel := errors.New("E2 injected assembly failure")
+	cfg.Streaming.Resolver = flowFailureResolver{countedResolver{c}, &failed, sentinel}
+	p, err := paragraph.Prepare(t.Context(), textInput("aa bb cc dd ee ff"), khipu.PrepareOptions{}, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := flowRequest(paragraph.FirstFit)
+	seed, err := p.FlowStart(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp, err := seed.Checkpoint(t.Context(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := &expiringContext{Context: t.Context()}
+	initial := seed.Initial()
+	before := c.snapshot()
+	first, _, err := p.FlowContinue(probe, seed, cp, 20*dimen.BP, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for at := 1; at <= probe.calls; at++ {
+		ctx := &expiringContext{Context: t.Context(), limit: at}
+		out, w, err := p.FlowContinue(ctx, seed, cp, 20*dimen.BP, true)
+		if out != nil || w != (paragraph.FlowWork{}) || !errors.Is(err, context.Canceled) {
+			t.Fatal("partial cancelled continuation", at, err)
+		}
+	}
+	failed = true
+	out, w, err := p.FlowContinue(t.Context(), seed, cp, 20*dimen.BP, true)
+	var stage *paragraph.Error
+	if out != nil || w != (paragraph.FlowWork{}) || !errors.Is(err, sentinel) || !errors.As(err, &stage) || stage.Stage != paragraph.StageAssemble {
+		t.Fatal("lost late failure cause/stage", err)
+	}
+	failed = false
+	// Caller-owned request and returned diagnostic slices are independent.
+	req.Params.LineLayout.Default.Factor = 100
+	req.Horizontal.RightSkip.W = dimen.Infinity
+	mutated := seed.Initial()
+	clear(mutated.BreakPositions)
+	clear(mutated.BidiRuns)
+	clear(mutated.VList.Lines())
+	for i := 0; i < 3; i++ {
+		retry, _, err := p.FlowContinue(t.Context(), seed, cp, 20*dimen.BP, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		compareCompleted(t, first, retry)
+		clear(retry.VList.Materials())
+		clear(retry.VList.AtomicPlacements())
+		clear(retry.BreakPositions)
+	}
+	compareCompleted(t, initial, seed.Initial())
+	noBaseShaping(t, before, c.snapshot())
+	p = nil
+	seed = nil
+	cp = nil
+	runtime.GC()
+	found := false
+	for k := 0; k < first.Frozen.KnotCount(); k++ {
+		tx, ok := first.Frozen.CopyText(k)
+		if !ok || len(tx.Glyphs) == 0 {
+			continue
+		}
+		found = true
+		old := tx.Glyphs[0].GlyphID
+		tx.Glyphs[0].GlyphID++
+		again, _ := first.Frozen.CopyText(k)
+		if again.Glyphs[0].GlyphID != old {
+			t.Fatal("mutable retained glyphs")
+		}
+	}
+	if !found {
+		t.Fatal("lost content lifetime")
+	}
+}
+
+func TestE2UninitializedSeed(t *testing.T) {
+	p, seed, calls := flowSeed(t, textInput("aa bb cc dd ee ff"), flowRequest(paragraph.FirstFit))
+	initial := seed.Initial()
+	cp, err := seed.Checkpoint(t.Context(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	before := calls.snapshot()
+	for _, bad := range []*paragraph.FlowSeed{new(paragraph.FlowSeed), nil} {
+		for _, resume := range []bool{false, true} {
+			out, err := flowToFrames(t.Context(), p, bad, 10, 20*dimen.BP, 20, resume)
+			if out != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
+				t.Fatal("invalid seed published a result", out, err)
+			}
+			out, err = flowToFrames(cancelled, p, bad, 10, 20*dimen.BP, 20, resume)
+			if out != nil || !errors.Is(err, context.Canceled) {
+				t.Fatal("invalid seed masked cancellation", err)
+			}
+			result, work, err := p.FlowContinue(t.Context(), bad, cp, 20*dimen.BP, resume)
+			if result != nil || work != (paragraph.FlowWork{}) || !errors.Is(err, contracts.ErrIllegalArguments) {
+				t.Fatal("invalid seed continued", err)
+			}
+		}
+		if bad.Initial() != nil {
+			t.Fatal("uninitialized seed has an initial result")
+		}
+		if cp, err := bad.Checkpoint(t.Context(), 0); cp != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
+			t.Fatal("uninitialized seed has a checkpoint", err)
+		}
+	}
+	if calls.snapshot() != before {
+		t.Fatal("invalid seed invoked services")
+	}
+	// Rejected inputs cannot invalidate a previously successful seed/preparation.
+	ref, err := flowToFrames(t.Context(), p, seed, 10, 20*dimen.BP, 1000, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := flowToFrames(t.Context(), p, seed, 10, 20*dimen.BP, 1000, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compareFlow(t, initial, ref, got, 1, 20*dimen.BP)
+	compareCompleted(t, initial, seed.Initial())
+	noBaseShaping(t, before, calls.snapshot())
+	// A successfully prepared empty paragraph is initialized, despite zero lines.
+	_, empty, _ := flowSeed(t, textInput(""), flowRequest(paragraph.FirstFit))
+	if empty.Initial() == nil {
+		t.Fatal("empty paragraph mistaken for an uninitialized seed")
+	}
+}
+
+func TestE2CheckpointOwnershipAndInput(t *testing.T) {
+	p, seed, _ := flowSeed(t, textInput("aa bb cc dd ee ff"), flowRequest(paragraph.FirstFit))
+	p2, seed2, _ := flowSeed(t, textInput("aa bb cc dd ee ff"), flowRequest(paragraph.FirstFit))
+	cp, _ := seed.Checkpoint(t.Context(), 1)
+	for _, invoke := range []func() error{
+		func() error { _, _, e := p2.FlowContinue(t.Context(), seed, cp, 20*dimen.BP, true); return e },
+		func() error { _, _, e := p.FlowContinue(t.Context(), seed2, cp, 20*dimen.BP, true); return e },
+		func() error {
+			_, _, e := p.FlowContinue(t.Context(), seed, new(paragraph.FlowCheckpoint), 20*dimen.BP, true)
+			return e
+		},
+		func() error { _, _, e := p.FlowContinue(nil, seed, cp, 20*dimen.BP, true); return e },
+		func() error { _, _, e := p.FlowContinue(t.Context(), seed, cp, dimen.Fil, true); return e },
+		func() error { _, _, e := p.FlowContinue(t.Context(), seed, cp, -1, true); return e },
+		func() error { _, e := seed.Checkpoint(t.Context(), -1); return e },
+		func() error { _, e := seed.Checkpoint(t.Context(), 99); return e },
+		func() error { _, e := new(paragraph.FlowSeed).Checkpoint(t.Context(), 0); return e },
+		func() error {
+			r := flowRequest(paragraph.FirstFit)
+			r.Params.LineLayout = nil
+			_, e := p.FlowStart(t.Context(), r)
+			return e
+		},
+	} {
+		if err := invoke(); !errors.Is(err, contracts.ErrIllegalArguments) {
+			t.Fatal("accepted invalid owner/request", err)
+		}
+	}
+	// Exercise khipu's own checkpoint identity independently of the paragraph guard.
+	c := new(serviceCalls)
+	owner := khipu.NewKhipukamayuq(flowConfig(c))
+	text := styled.TextFromString("aa\nbb\ncc")
+	para, err := styled.ParagraphFromText(&text, 0, text.Raw().Len(), bidi.LeftToRight, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := owner.PrepareParagraph(t.Context(), khipu.ParagraphInput{Paragraph: para}, khipu.PrepareOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := owner.BindParagraph(t.Context(), prepared, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	breaks, err := firstfit.BreakParagraph(bound, firstfit.DefaultLayout(linebreak.RectangularParShape(40*dimen.BP)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := append([]int(nil), breaks[:1]...)
+	core, err := owner.FlowCheckpointFor(t.Context(), prepared, prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix[0] = -1
+	copied, err := owner.FlowPrefix(t.Context(), prepared, core)
+	if err != nil || !reflect.DeepEqual(copied, breaks[:1]) {
+		t.Fatal("checkpoint alias", err)
+	}
+	copied[0] = -1
+	copied, err = owner.FlowPrefix(t.Context(), prepared, core)
+	if err != nil || !reflect.DeepEqual(copied, breaks[:1]) {
+		t.Fatal("checkpoint accessor alias", err)
+	}
+	other := khipu.NewKhipukamayuq(flowConfig(new(serviceCalls)))
+	if _, err := other.FlowPrefix(t.Context(), prepared, core); !errors.Is(err, contracts.ErrIllegalArguments) {
+		t.Fatal("wrong owner")
+	}
+	prepared2, err := owner.PrepareParagraph(t.Context(), khipu.ParagraphInput{Paragraph: para}, khipu.PrepareOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.FlowPrefix(t.Context(), prepared2, core); !errors.Is(err, contracts.ErrIllegalArguments) {
+		t.Fatal("wrong preparation")
+	}
+	if _, err := owner.FlowCheckpointFor(t.Context(), prepared, []int{breaks[1]}); !errors.Is(err, contracts.ErrIllegalArguments) {
+		t.Fatal("skipped forced boundary")
+	}
+}
+
+type flowNoHyphenator struct{}
+
+func (flowNoHyphenator) Discretionaries(string, *khipu.Params) ([]khipu.HyphenationFragment, error) {
+	panic("E2 must reject enabled hyphenation before layout")
+}
+func TestE2BoundedPolicyAndHeightOutcomes(t *testing.T) {
+	for _, mode := range []khipu.HyphenationMode{khipu.ExplicitHyphenation, khipu.AutomaticHyphenation} {
+		cfg := flowConfig(new(serviceCalls))
+		cfg.Hyphenator = flowNoHyphenator{}
+		p, err := paragraph.Prepare(t.Context(), textInput("ab\u00adcd"), khipu.PrepareOptions{Hyphenation: mode}, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if seed, err := p.FlowStart(t.Context(), flowRequest(paragraph.FirstFit)); seed != nil || !errors.Is(err, khipu.ErrUnsupportedPolicy) {
+			t.Fatal("hyphenation silently admitted", err)
+		}
+	}
+	for _, tc := range []struct {
+		text           string
+		factor, ha, hb float64
+		status         outcome
+	}{
+		{"", 1, 0, 0, complete},
+		{"aa bb cc dd ee ff", 1, 10, 10, moreFrames},
+		{"aa bb cc dd ee ff", 1, 10, 0, moreFrames},
+		{"aa bb cc dd ee ff", 1, 9, 9, noProgress},
+		{"aa bb cc dd ee ff", 1, 0, math.Nextafter(10, 0), noProgress},
+		{"aa bb cc dd ee ff", 0, 0, 0, complete},
+	} {
+		req := flowRequest(paragraph.FirstFit)
+		req.Params.LineLayout.Default.Factor = tc.factor
+		p, seed, _ := flowSeed(t, textInput(tc.text), req)
+		out, err := flowToFrames(t.Context(), p, seed, tc.ha, 20*dimen.BP, tc.hb, true)
+		if err != nil || out.status != tc.status || out.a.Box().Extent > tc.ha || out.b.Box().Extent > tc.hb {
+			t.Fatal("height outcome", tc, err)
+		}
+		if out.tail.Range().End != len(out.result.VList.Lines()) {
+			t.Fatal("lost tail")
+		}
+	}
+	p, seed, _ := flowSeed(t, textInput("aa bb cc dd ee ff"), flowRequest(paragraph.FirstFit))
+	out, err := flowToFrames(t.Context(), p, seed, 10, 0, 1000, true)
+	if err != nil || len(out.overfull) == 0 {
+		t.Fatal("unreported horizontal overflow", err)
+	}
+	for _, h := range []float64{-1, math.Inf(1), math.NaN(), dimen.Fil.Points()} {
+		if out, err := flowToFrames(t.Context(), p, seed, 10, 20*dimen.BP, h, true); out != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
+			t.Fatal("invalid height accepted", err)
+		}
+	}
+}

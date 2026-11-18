@@ -20,12 +20,13 @@ import (
 // replacement batches are memoized under the same serialized ownership contract
 // and imported lazily into each fresh layout binding.
 type Prepared struct {
-	owner   *khipu.Khipukamayuq
-	content *khipu.PreparedParagraph
-	text    styled.Text
-	config  khipu.Config
-	runs    []bidi.Segment
-	anchors []contracts.AtomicAnchor
+	owner       *khipu.Khipukamayuq
+	content     *khipu.PreparedParagraph
+	text        styled.Text
+	config      khipu.Config
+	runs        []bidi.Segment
+	anchors     []contracts.AtomicAnchor
+	hyphenation khipu.HyphenationMode
 }
 
 // Prepare resolves bidi once and shapes text around atomic occurrences without
@@ -44,8 +45,12 @@ func Prepare(ctx context.Context, input Input, options khipu.PrepareOptions, con
 	if input.Direction != bidi.LeftToRight && input.Direction != bidi.RightToLeft {
 		return fail(StageInput, invalidInput("direction"))
 	}
-	p := &Prepared{text: input.Text, config: cloneConfig(config), anchors: slices.Clone(input.Atomics)}
-	para, err := styled.ParagraphFromText(&p.text, 0, p.text.Raw().Len(), input.Direction, input.Markup)
+	p := &Prepared{text: input.Text, config: cloneConfig(config), anchors: slices.Clone(input.Atomics), hyphenation: options.Hyphenation}
+	// ParagraphFromText retains its text handle, also shared by frozen output.
+	// An interior pointer (&p.text) would keep all working preparation alive.
+	// Give it an independent handle while sharing the immutable cord and styles.
+	text := p.text
+	para, err := styled.ParagraphFromText(&text, 0, text.Raw().Len(), input.Direction, input.Markup)
 	if err != nil {
 		return fail(StageParagraph, err)
 	}
@@ -84,7 +89,23 @@ type LayoutRequest struct {
 // paragraph. Lazy discretionary shaping remains owner-controlled. Cancellation
 // is checked between stages; synchronous collaborators retain their limits.
 func (p *Prepared) Layout(ctx context.Context, request LayoutRequest) (*Result, error) {
-	fail := func(stage Stage, err error) (*Result, error) { return nil, &Error{stage, err} }
+	b, err := p.bindLayout(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	return finishLayout(ctx, p.owner, b.bound, b.params, b.geometry, p.text, p.config, p.runs, b.boxes)
+}
+
+type boundLayout struct {
+	params   Params
+	geometry khipu.Params
+	boxes    map[contracts.AtomicID]AtomicBox
+	advances []khipu.AtomicAdvance
+	bound    *khipu.Khipu
+}
+
+func (p *Prepared) bindLayout(ctx context.Context, request LayoutRequest) (*boundLayout, error) {
+	fail := func(stage Stage, err error) (*boundLayout, error) { return nil, &Error{stage, err} }
 	if ctx == nil {
 		return fail(StageInput, invalidInput("nil context"))
 	}
@@ -110,7 +131,7 @@ func (p *Prepared) Layout(ctx context.Context, request LayoutRequest) (*Result, 
 	if err != nil {
 		return fail(StageBind, err)
 	}
-	return finishLayout(ctx, p.owner, bound, params, geometry, p.text, p.config, p.runs, boxes)
+	return &boundLayout{params, geometry, boxes, advances, bound}, nil
 }
 
 // Clone value envelopes, not arbitrary services or style implementations.

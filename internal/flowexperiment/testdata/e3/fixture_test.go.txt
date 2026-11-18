@@ -1,0 +1,204 @@
+package flowexperiment
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/npillmayer/khipu"
+	"github.com/npillmayer/khipu/contracts"
+	"github.com/npillmayer/khipu/dimen"
+	"github.com/npillmayer/typography/glyphing"
+	fontot "github.com/npillmayer/typography/glyphing/adapter/opentype"
+	"github.com/npillmayer/typography/glyphing/paragraph"
+	"github.com/npillmayer/uax/bidi"
+)
+
+// Real faces stay concrete only inside the adapter. This instrumentation wraps
+// services, never faces, and forwards the original ShapeParams unchanged.
+type e3Stream struct {
+	contracts.StreamingShaper
+	calls *serviceCalls
+}
+
+func (s e3Stream) CheckFace(f contracts.FontFace) error {
+	s.calls.hit(3)
+	return s.StreamingShaper.CheckFace(f)
+}
+func (s e3Stream) Shape(ctx context.Context, p contracts.ShapeParams, r contracts.RuneReader, o contracts.ShapeBufferOptions) error {
+	s.calls.hit(2)
+	return s.StreamingShaper.Shape(ctx, p, r, o)
+}
+
+type e3Fixture struct {
+	backend  string
+	input    paragraph.Input
+	config   khipu.Config
+	request  paragraph.LayoutRequest
+	prepared *paragraph.Prepared
+	seed     *paragraph.FlowSeed
+	initial  *paragraph.Result
+	calls    *serviceCalls
+	key      reuseKey
+}
+
+var e3LargeReal = flag.Bool("flow-e3-large-real", false, "include the expensive 10,000-word real-font pilot cases")
+
+func e3Input(t testing.TB, backend string, words int, fixed bool) (paragraph.Input, khipu.Config, *serviceCalls) {
+	t.Helper()
+	calls := new(serviceCalls)
+	vocabulary := []string{"alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa"}
+	if fixed {
+		vocabulary = []string{"aa"}
+	} else if backend == "hebrew" {
+		// Pure Hebrew avoids the separately documented mixed-RTL admission/stall cases.
+		vocabulary = []string{"אב", "גד", "הו", "זח", "טי"}
+	}
+	tokens := make([]string, words)
+	for i := range tokens {
+		tokens[i] = vocabulary[i%len(vocabulary)]
+	}
+	raw := strings.Join(tokens, " ")
+	if backend == "synthetic" {
+		return textInput(raw), flowConfig(calls), calls
+	}
+	path := "../../../opentype/testdata/fonts/GentiumPlus-R.ttf"
+	if backend == "hebrew" {
+		path = "../../../opentype/testdata/fonts/NotoSansHebrew-Regular.ttf"
+	} else if backend != "gentium" {
+		t.Fatal("unknown backend", backend)
+	}
+	entry, err := (fontot.Services{}).Load(t.Context(), path, nil)
+	if err != nil {
+		t.Fatal(err) // Missing offline fixtures must never silently skip a sample.
+	}
+	mapper, err := glyphing.NewStyleMapper(t.Context(), glyphing.SelectedFonts{
+		Faces: []glyphing.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 10 * dimen.BP,
+	}, fontot.Services{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _, err := mapper.Itemize(t.Context(), raw, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := khipu.DefaultParams()
+	params.SpaceShrinkPercent, params.SpaceStretchPercent = 0, 0
+	config := khipu.Config{Params: &params, Streaming: &khipu.StreamingConfig{
+		Resolver: mapper, Defaults: mapper.Defaults(),
+		NewShaper: func() (contracts.StreamingShaper, error) {
+			calls.hit(1)
+			s, err := fontot.NewStream(8)
+			return e3Stream{s, calls}, err
+		},
+	}}
+	in := paragraph.Input{Text: text}
+	if backend == "hebrew" {
+		in.Direction = bidi.RightToLeft
+	}
+	return in, config, calls
+}
+
+func e3Prepare(t testing.TB, input paragraph.Input, config khipu.Config) *paragraph.Prepared {
+	t.Helper()
+	p, err := paragraph.Prepare(t.Context(), input, khipu.PrepareOptions{Hyphenation: khipu.NoHyphenation}, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func newE3Fixture(t testing.TB, backend string, words int, fixed bool) *e3Fixture {
+	t.Helper()
+	input, cfg, calls := e3Input(t, backend, words, fixed)
+	p := e3Prepare(t, input, cfg)
+	req := flowRequest(paragraph.FirstFit)
+	req.Params.Constraints.Width = 300 * dimen.BP
+	if fixed {
+		req.Params.Constraints.Width = 145 * dimen.BP // Exactly ten synthetic "aa" words.
+	}
+	req.Params.LineLayout.Default.Factor = 1.2
+	seed, err := p.FlowStart(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := seed.Initial()
+	key := reuseKey{width: req.Params.Constraints.Width, source: 1, styles: 1, fonts: 1, lineHeight: 1, atomics: 1, policy: 1}
+	return &e3Fixture{backend, input, cfg, req, p, seed, initial, calls, key}
+}
+
+// The bounded repeated matrix keeps the large case synthetic. The initial
+// real-font 10,000-word pilot is reported separately, never silently averaged.
+func e3Sizes(backend string) []int {
+	if backend == "synthetic" || *e3LargeReal {
+		return []int{100, 1000, 10000}
+	}
+	return []int{100, 1000}
+}
+
+func (f *e3Fixture) cut(percent int) (int, float64) {
+	lines := f.initial.VList.Lines()
+	n := max(1, min(len(lines)-1, len(lines)*percent/100))
+	last := lines[n-1]
+	return n, last.Top + last.Height
+}
+
+// Admission is untimed and uses E2's complete frozen/prefix/source oracle. This
+// prevents a faster failure, dropped tail or changed prefix from becoming a sample.
+func e3Admit(t testing.TB, f *e3Fixture, cut int, height float64) {
+	t.Helper()
+	width := f.key.width * 3 / 4
+	before := f.calls.snapshot()
+	ref, err := flowToFrames(t.Context(), f.prepared, f.seed, height, width, 30000, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := flowToFrames(t.Context(), f.prepared, f.seed, height, width, 30000, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compareFlow(t, f.initial, ref, got, cut, width)
+	if got.status != complete || len(got.overfull) != 0 {
+		t.Fatal("benchmark requires complete horizontal/vertical fit")
+	}
+	noBaseShaping(t, before, f.calls.snapshot())
+	f.calls.sealed.Store(true)
+	equal, err := splitEqual(t.Context(), f.initial.VList, f.key, frame{f.key, height}, frame{f.key, 30000})
+	f.calls.sealed.Store(false)
+	if err != nil || equal.status != complete || len(equal.overfull) != 0 || equal.a.Range().End != cut {
+		t.Fatal("equal-width benchmark admission", err)
+	}
+}
+
+func TestE3BenchmarkAdmission(t *testing.T) {
+	for _, backend := range []string{"synthetic", "gentium", "hebrew"} {
+		t.Run(backend, func(t *testing.T) {
+			f := newE3Fixture(t, backend, 60, false)
+			for _, percent := range []int{10, 50, 90} {
+				cut, height := f.cut(percent)
+				e3Admit(t, f, cut, height)
+			}
+			cp, err := f.seed.Checkpoint(t.Context(), 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var timing paragraph.FlowTiming
+			plain, _, err := f.prepared.FlowContinue(t.Context(), f.seed, cp, f.key.width*3/4, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			timed, _, err := f.prepared.FlowContinue(paragraph.FlowTimingContext(t.Context(), &timing), f.seed, cp, f.key.width*3/4, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			compareCompleted(t, plain, timed)
+			if timing.Bind <= 0 || timing.Break <= 0 || timing.Freeze <= 0 || timing.Assembly <= 0 {
+				t.Fatal("missing measured phase", timing)
+			}
+		})
+	}
+}
+
+func e3Name(backend string, words int) string { return fmt.Sprintf("%s/N%d", backend, words) }

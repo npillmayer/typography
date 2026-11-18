@@ -1,0 +1,46 @@
+package paragraph
+
+import (
+	"context"
+	"time"
+)
+
+// FlowTiming contains invocation-local E3 phase durations. Freeze includes
+// materialization, line-local bidi ordering and allocation. Assembly includes
+// metrics, atomic placement and validated publication. Failed calls are not samples.
+type FlowTiming struct {
+	Bind, Break, Freeze, Assembly time.Duration
+}
+
+type flowTimingKey struct{}
+
+// FlowTimingContext enables phase clocks only in the experimental overlay.
+// The caller owns timing and serializes every operation using it.
+func FlowTimingContext(ctx context.Context, timing *FlowTiming) context.Context {
+	return context.WithValue(ctx, flowTimingKey{}, timing)
+}
+
+func flowClock(ctx context.Context) time.Time {
+	if t, _ := ctx.Value(flowTimingKey{}).(*FlowTiming); t != nil {
+		return time.Now()
+	}
+	return time.Time{}
+}
+
+func flowRecord(ctx context.Context, start time.Time, phase string) {
+	if start.IsZero() {
+		return
+	}
+	d := time.Since(start)
+	t := ctx.Value(flowTimingKey{}).(*FlowTiming)
+	switch phase {
+	case "bind":
+		t.Bind += d
+	case "break":
+		t.Break += d
+	case "freeze":
+		t.Freeze += d
+	case "assembly":
+		t.Assembly += d
+	}
+}

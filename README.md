@@ -1,5 +1,11 @@
 # typography
 
+Typography turns styled text and preselected fonts into immutable paragraph
+layouts, then provides a separate path for rendering retained glyph-outline
+proofs. It supports CSS line heights, fixed inline objects and bounded flow across
+frames. Applications own input normalization, font discovery, surrounding box
+layout and paint selection.
+
 Typography has two independent branches:
 
 - [glyphing](glyphing/README.md) resolves selected fonts and itemizes text.
@@ -85,6 +91,22 @@ local geometry independently of the VList. Surrounding block margins remain with
 the application. Unboxing has no context argument; restacking, rendering of the
 new items and stretch/shrink packing remain deferred.
 
+`paragraph.FitFragment` selects a full-line prefix fitting an available height
+for compatible equal-width layout, returning immutable placed/remainder fragments.
+Its explicit reuse key retains no preparation or services. It performs no font
+queries, binding or rebreaking.
+See [equal-width height cuts](glyphing/paragraph/README.md#equal-width-height-cuts).
+
+`Prepared.StartFlow` and `Continuation.Fit` add bounded NoHyphenation frame flow:
+retain equal-width lines, or lock accepted breakpoints and fully assemble a
+first-fit continuation at a new width. Keep preparation only until each paragraph
+finishes, then retain its frozen fragments. See [frame flow](glyphing/paragraph/README.md#checkpoint-based-frame-flow).
+`render.BuildFragmentProof` renders retained ranges without relayout; tytui's
+documentlayout composes positioned fragments and fixed opaque interiors for
+proof/SVG export. Tytui/documentlayout now supplies bounded single-paragraph frame scheduling and
+`tycli --frames` export. P6 validates this opt-in, bounded profile; see the
+[production cost report](doc/FLOW_COSTS.md) for measurements and remaining limits.
+
 Replay is application-owned. Resource identities and CSS proof controls remain unchanged;
 current replay is CSS-only version 5 and rejects earlier formats. This adds no page layout, font discovery, coverage
 policy, rasterization or generalized paint model.
@@ -93,5 +115,10 @@ policy, rasterization or generalized paint model.
 
 Run go test ./..., go test -race ./..., go build ./... and go vet ./... in this
 module and sibling tytui. Root dependency audits enforce the branch boundaries.
-Unit tests stay with their owners; [integration](integration/) contains cross-phase
+Unit tests stay with their owners; [integration](integration/README.md) contains cross-phase
 tests. Real font fixtures remain in sibling opentype; no fonts are copied.
+
+The [internal flow experiment](internal/flowexperiment/README.md) retains historical
+E1–E3 evidence. Current production measurement commands and metric contracts are
+in [the P6 harness guide](doc/flow-cost/README.md); historical evidence is not
+regenerated as part of routine verification.

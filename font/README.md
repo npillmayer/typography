@@ -13,3 +13,10 @@ Source supplies independent readers for retained bytes.
 FontFace, FontScale and FontInstance remain in khipu/contracts. ResourceFace is
 an optional capability used by the OpenType renderer, not a new requirement on
 all synthetic or alternative backends.
+
+
+Use [glyphing adapters](../glyphing/adapter/opentype/README.md) to prepare concrete
+faces and [render services](../render/adapter/opentype/README.md) to consume their
+retained resources. This package owns neither parser lifetime nor font acceptance.
+Run `go test ./font` and `go test -race ./font` from the module root; tests cover
+missing/mismatched resource identity and detached warning metadata.

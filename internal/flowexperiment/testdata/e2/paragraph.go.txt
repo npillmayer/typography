@@ -1,0 +1,173 @@
+package paragraph
+
+import (
+	"context"
+	"slices"
+
+	"github.com/npillmayer/khipu"
+	"github.com/npillmayer/khipu/dimen"
+	"github.com/npillmayer/khipu/linebreak/firstfit"
+)
+
+// FlowSeed retains the immutable initial result and the exact layout request.
+// Only FlowStart initializes a seed; its zero value cannot be continued.
+// Experimental methods share Prepared's serialized-use/stable-service contract.
+type FlowSeed struct {
+	prepared *Prepared
+	request  LayoutRequest
+	initial  *Result
+}
+
+// FlowCheckpoint is tied to one seed, preparation and ordinary line boundary.
+type FlowCheckpoint struct {
+	seed  *FlowSeed
+	core  *khipu.FlowCheckpoint
+	lines int
+}
+
+// FlowWork reports phase visits, not timing or allocations.
+type FlowWork struct {
+	khipu.FlowWork
+	firstfit.FlowVisits
+	AssembledLines int
+}
+
+func cloneFlowResult(r *Result) *Result {
+	c := *r
+	c.BreakPositions = slices.Clone(r.BreakPositions)
+	c.BidiRuns = slices.Clone(r.BidiRuns)
+	c.flowBreaks = slices.Clone(r.flowBreaks)
+	return &c
+}
+
+func (s *FlowSeed) initialized() bool {
+	return s != nil && s.prepared != nil && s.initial != nil
+}
+
+// Initial returns detached diagnostics sharing only immutable frozen geometry.
+// A nil or uninitialized seed returns nil; a successful empty layout does not.
+func (s *FlowSeed) Initial() *Result {
+	if !s.initialized() {
+		return nil
+	}
+	return cloneFlowResult(s.initial)
+}
+
+// FlowStart runs the ordinary initial layout once. NoHyphenation is an explicit
+// admission gate, rather than a guess based on whether that run chose a hyphen.
+func (p *Prepared) FlowStart(ctx context.Context, req LayoutRequest) (*FlowSeed, error) {
+	if ctx == nil {
+		return nil, &Error{StageInput, khipu.ErrIllegalArguments}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, &Error{StageInput, err}
+	}
+	if p == nil || p.owner == nil || p.content == nil {
+		return nil, &Error{StageInput, khipu.ErrIllegalArguments}
+	}
+	if !p.content.FlowSupported(p.owner) {
+		return nil, &Error{StageInput, khipu.ErrUnsupportedPolicy}
+	}
+	if req.Params.LineLayout != nil {
+		req.Params.LineLayout = req.Params.LineLayout.Clone()
+	}
+	req.Atomics = slices.Clone(req.Atomics)
+	if req.Horizontal != nil {
+		h := *req.Horizontal
+		req.Horizontal = &h
+	}
+	r, err := p.Layout(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &FlowSeed{p, req, r}, nil
+}
+
+// Checkpoint captures a prefix of the initial successful complete path.
+func (s *FlowSeed) Checkpoint(ctx context.Context, lines int) (*FlowCheckpoint, error) {
+	if ctx == nil {
+		return nil, khipu.ErrIllegalArguments
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !s.initialized() || lines < 0 || lines > len(s.initial.VList.Lines()) {
+		return nil, khipu.ErrIllegalArguments
+	}
+	cp, err := s.prepared.owner.FlowCheckpointFor(ctx, s.prepared.content, s.initial.flowBreaks[:lines])
+	if err != nil {
+		return nil, err
+	}
+	return &FlowCheckpoint{s, cp, lines}, nil
+}
+
+type flowWidths struct {
+	prefix int
+	a, b   dimen.DU
+}
+
+func (s flowWidths) LineLength(line int32) dimen.DU {
+	if int(line) <= s.prefix {
+		return s.a
+	}
+	return s.b
+}
+
+// FlowContinue keeps the whole source/bidi preparation, binds fresh planes and
+// freezes a complete path. The suffix policy is explicitly first-fit even when
+// the seed used Knuth-Plass. Geometry and paragraph-fill policy stay with the seed.
+// All errors return zero work and no result; the checkpoint is reusable.
+func (p *Prepared) FlowContinue(ctx context.Context, seed *FlowSeed, cp *FlowCheckpoint, width dimen.DU, resume bool) (*Result, FlowWork, error) {
+	fail := func(stage Stage, err error) (*Result, FlowWork, error) { return nil, FlowWork{}, &Error{stage, err} }
+	if ctx == nil {
+		return fail(StageInput, khipu.ErrIllegalArguments)
+	}
+	if err := ctx.Err(); err != nil {
+		return fail(StageInput, err)
+	}
+	if p == nil || !seed.initialized() || seed.prepared != p || cp == nil || cp.seed != seed || width < 0 || width >= dimen.Fil {
+		return fail(StageInput, khipu.ErrIllegalArguments)
+	}
+	prefix, err := p.owner.FlowPrefix(ctx, p.content, cp.core)
+	if err != nil {
+		return fail(StageInput, err)
+	}
+	if cp.lines == len(seed.initial.VList.Lines()) {
+		return cloneFlowResult(seed.initial), FlowWork{}, nil
+	}
+	req := seed.request
+	params, err := validateParams(req.Params, p.text, p.config)
+	if err != nil {
+		return fail(StageInput, err)
+	}
+	geometry := layoutGeometry(params, req.Horizontal)
+	geometry.LineShape = flowWidths{cp.lines, params.Constraints.Width, width}
+	boxes, advances, err := validateAtomics(ctx, p.anchors, req.Atomics)
+	if err != nil {
+		return fail(StageBind, err)
+	}
+	var work FlowWork
+	end := -1
+	if len(prefix) > 0 {
+		end = prefix[len(prefix)-1]
+	}
+	ctx = khipu.FlowTraceContext(ctx, end, &work.FlowWork)
+	bound, err := p.owner.BindParagraph(ctx, p.content, advances)
+	if err != nil {
+		return fail(StageBind, err)
+	}
+	breaks, visits, err := firstfit.FlowBreak(ctx, bound, geometry, prefix, resume)
+	if err != nil {
+		return fail(StageBreak, err)
+	}
+	result, err := flowFinishWithBreaks(ctx, p.owner, bound, params, geometry, p.text, p.config, p.runs, boxes, breaks)
+	if err != nil {
+		return nil, FlowWork{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return fail(StageAssemble, err)
+	}
+	work.FlowVisits = visits
+	work.AssembledLines = len(result.VList.Lines())
+	return result, work, nil
+}

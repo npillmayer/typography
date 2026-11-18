@@ -65,5 +65,15 @@ accepted in completed CSS lists; it provides no unboxing or glue API.
 Use `paragraph.Fragment` for an exact whole-VList view and
 `paragraph.SplitFragment` for explicit interior boundaries. These operations do
 not change VList's full-paragraph contract. Fragments retain stable frozen
-services and can retain the whole paragraph in memory. No rendering input,
-target-height packing or serialization support is added.
+services and can retain the whole paragraph in memory. `render.BuildFragmentProof`
+consumes these placements without restacking; working preparation is not retained.
+For compatible uniform-width owners, `paragraph.FitFragment` selects the longest
+whole-line prefix fitting an available height. `Prepared.StartFlow` and
+`Continuation.Fit` handle width changes and heterogeneous width history in the
+paragraph package; shared layout values contain no working preparation or tokens.
+See [paragraph flow](../glyphing/paragraph/README.md#checkpoint-based-frame-flow).
+Target-height packing and serialization remain deferred.
+
+Run `go test ./layout` and `go test -race ./layout` from the module root. Owning
+tests cover publication copies, strict placement anchors, signed/zero geometry,
+fragment ranges, local depth validation, cancellation and unboxing ownership.
