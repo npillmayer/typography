@@ -1,9 +1,15 @@
 # Stage 1: immutable Khipu and independent reflow decisions
 
-Design specification, 2026-11-19. **Documentation only; none of the APIs below
-is implemented.** This completes the data-model specification stage of
-[REFLOW_PLAN.md](REFLOW_PLAN.md), not its implementation or acceptance tests.
-Names in Go sketches are proposed replacement APIs, not compatibility aliases.
+Design specification, 2026-11-19. The khipu contracts are implemented by PR 1
+of [REFLOW_PLAN.md](REFLOW_PLAN.md); typography and application adoption remain
+PR 2 and later work. Go sketches describe contracts and illustrative private
+organization, not an exact transcription of implementation fields. Migration
+tables below compare the pre-PR-1 representations with the new model.
+
+Public reflow APIs are synchronous and context-free. Only streaming shaping and
+font loading use contexts; internal stream failure cleanup remains mandatory.
+See [khipu usage](../../khipu/README.md) and
+[PR 1 migration/verification](../../khipu/doc/REFLOW_MIGRATION.md).
 
 ## Decisions
 
@@ -144,7 +150,7 @@ mutating a supplied provider violates the incarnation contract.
 ```go
 // Khipukamayuq remains a configured construction executor, not material identity.
 func (q *Khipukamayuq) PrepareParagraph(
-    ctx context.Context, input ParagraphInput, options PrepareOptions,
+    input ParagraphInput, options PrepareOptions,
 ) (*Khipu, *Discovery, error)
 
 type KnotTemplate struct {
@@ -197,7 +203,7 @@ type AtomicBinding struct {
     advances []dimen.DU // canonical atomic-slot order, copied on construction
 }
 
-func BindParagraph(ctx context.Context, k *Khipu,
+func BindParagraph(k *Khipu,
     advances []AtomicAdvance) (*AtomicBinding, error)
 func (b *AtomicBinding) Incarnation() IncarnationID
 func (b *AtomicBinding) KnotCount() int
@@ -256,7 +262,7 @@ type discoveryRecipe struct {
 type Discovery struct {
     material *Khipu
     recipe   discoveryRecipe
-    gate     chan struct{} // serializes misses; acquisition is cancellable
+    gate     sync.Mutex // serializes synchronous discovery misses
     mu       sync.Mutex
     batches  map[int]*AlternativeSet
 }
@@ -283,7 +289,7 @@ type replacementMaterial struct {
     widths  candidateWidths
 }
 
-func (d *Discovery) Alternatives(ctx context.Context, sourceKnot int) (*AlternativeSet, error)
+func (d *Discovery) Alternatives(sourceKnot int) (*AlternativeSet, error)
 type Alternative struct {
     ID AlternativeID
     PreBreak, PostBreak KnotCore
@@ -299,21 +305,20 @@ Khipu. The recipe is private and never replaced during the incarnation. Calls us
 obey their serialization requirements, including across different facilities.
 The gate is not a claim that a shared provider is safe across incarnations.
 
-A layout call to `Alternatives` returns an immutable cached set after checking
-cancellation. On a miss, acquire the gate using the request context, recheck the
-cache, discover and normalize all inputs, shape the whole batch privately, check
-cancellation, then publish under the mutex. Release the gate on every outcome.
-Concurrent requests for the same missing source wait and
-reuse the successful publication; a cancelled/failed producer publishes nothing,
-and a later waiter can retry with its own context. There is no detached background
-producer whose lifetime depends on hidden cancellation rules. A successfully
-published batch may survive later cancellation of the caller's overall trial.
+A layout call to `Alternatives` returns an immutable cached set. On a miss,
+acquire the discovery gate, recheck the cache, discover and normalize all inputs,
+shape the whole batch privately, then publish under the cache mutex. Release the
+gate on every outcome. Concurrent requests reuse successful publication; failures
+publish nothing and a waiting caller may retry. There is no detached producer.
+A successfully published batch may survive later failure or rejection of a trial.
 
-This intentionally serializes discovery misses per incarnation. Completed reads
-and independent search work can be concurrent after service audits. It avoids
-introducing shared in-flight request ownership in the first implementation.
-Synchronous collaborators may still delay cancellation; new context-bearing seams
-do not silently solve the upstream bidi/provider limitations.
+Discovery misses are serialized per incarnation. Completed reads and independent
+search work can be concurrent after service audits. Public preparation, binding,
+discovery, measurement, breaking, freezing and checkpoint APIs are synchronous
+and take no context. Contexts belong only at streaming-shaper and font-loader
+boundaries; preserve internal stream cancellation, draining and producer joining
+on errors. No caller cancellation of CPU search or discovery-lock waiting is
+promised. This does not repair the upstream bidi limitation.
 
 A present empty set means successful empty discovery; an absent key means unknown.
 Do not cache errors. No partial pre/post pair is published. Intrinsic measurement
@@ -371,7 +376,7 @@ type BreakRequest struct {
     Geometry  GeometryRequest
     Prefix    *BreakCheckpoint // nil starts at the paragraph beginning
 }
-func (r BreakRequest) Validate(ctx context.Context) error
+func (r BreakRequest) Validate() error
 
 type GeometryRequest struct {
     Shape LineShape
@@ -410,10 +415,11 @@ type Tikray struct {
 func (p *Tikray) Incarnation() IncarnationID
 func (p *Tikray) Lines() []LineDecision
 func (p *Tikray) Policies() []PolicyRecord
+func (p *Tikray) BreakpointPositions() ([]uint64, error)
 func (p *Tikray) Diagnostics() BreakDiagnostics
 func (p *Tikray) PolicyForLine(index int) (PolicyRecord, bool)
-func Freeze(ctx context.Context, plan *Tikray) (*FrozenKhipu, error)
-func NewTikray(ctx context.Context, request BreakRequest,
+func Freeze(plan *Tikray) (*FrozenKhipu, error)
+func NewTikray(request BreakRequest,
     decisions []LineDecision, policy PolicyRecord, diagnostics BreakDiagnostics,
 ) (*Tikray, error)
 ```
@@ -424,6 +430,9 @@ attempt. Accessors return detached values/slices. Provisional choices, width
 memoization and search arrays stay in a private per-invocation workspace; they
 are not a mutable phase of a published Tikray. There is no shared "current
 Tikray" on Khipu or Discovery, and creating one does not commit a page candidate.
+
+`BreakpointPositions` maps this plan's complete decisions to original paragraph-relative
+UTF-8 endpoints, without discovery. It replaces the old Khipu-plus-path query.
 
 `Diagnostics` returns the retained `BreakDiagnostics` by value. A nil receiver
 or uninitialized zero-value Tikray returns `BreakDiagnostics{}`. `HasScore` and
@@ -445,7 +454,7 @@ returned record cannot affect later inspection, freezing or checkpoint creation.
 The private policy mapping remains encapsulated; `Policies()` alone is not a
 per-line attribution list.
 
-`BreakRequest.Validate` checks context, initialized binding/discovery handles,
+`BreakRequest.Validate` checks initialized binding/discovery handles,
 matching incarnation, geometry inputs and any checkpoint's binding compatibility
 before a sibling breaker searches. It uses the same prefix validator as
 `SeedFor` below, without copying a seed, scanning prefix knots or querying Shape,
@@ -521,10 +530,10 @@ Proposed breaker boundaries, in their existing packages:
 
 ```go
 // firstfit and knuthplass each retain their own typed algorithm Parameters.
-func BreakParagraph(ctx context.Context, request khipu.BreakRequest,
+func BreakParagraph(request khipu.BreakRequest,
     params *Parameters) (*khipu.Tikray, error)
 // firstfit only initially: requires request.Prefix != nil.
-func ContinueParagraph(ctx context.Context, request khipu.BreakRequest,
+func ContinueParagraph(request khipu.BreakRequest,
     params *Parameters) (*khipu.Tikray, error)
 ```
 
@@ -533,10 +542,9 @@ func ContinueParagraph(ctx context.Context, request khipu.BreakRequest,
 returns `ErrUnsupportedPolicy` until an explicit continuation contract is added.
 Both algorithms own fresh private search state and publish through the common
 validator. Nil algorithm parameters keep existing effective defaults. Neither
-writes Khipu, binding or shared selections. Cancellation/errors return nil plans;
-successful discovery can remain cached. Check cancellation in search loops and
-publication, while retaining explicit limits for synchronous callbacks. Adding
-context plumbing is part of the future migration, not a claim about today's API.
+writes Khipu, binding or shared selections. Errors return nil plans;
+successful discovery can remain cached. Search and publication are synchronous;
+there is no public context or mid-call cancellation contract.
 
 Freezing performs existing trimming, replacement substitution, line-local bidi
 ordering and width allocation using captured geometry. It neither shapes nor
@@ -563,7 +571,7 @@ type BreakCheckpoint struct {
     resume       ResumePosition
 }
 
-func Checkpoint(ctx context.Context, plan *Tikray,
+func Checkpoint(plan *Tikray,
     acceptedLines int) (*BreakCheckpoint, error)
 
 // Detached breaker-owned snapshot, not an independently trusted certificate.
@@ -573,8 +581,7 @@ type ContinuationSeed struct {
     PostBreak KnotCore // carried metrics/flags; meaningful iff Resume.Carry != zero
 }
 func (s ContinuationSeed) AcceptedLines() int // len(s.Prefix)
-func (c *BreakCheckpoint) SeedFor(ctx context.Context,
-    binding *AtomicBinding) (ContinuationSeed, error)
+func (c *BreakCheckpoint) SeedFor(binding *AtomicBinding) (ContinuationSeed, error)
 ```
 
 Only a validated successful plan creates a checkpoint; arbitrary byte offsets or
@@ -584,9 +591,8 @@ replacement references; do not retain the entire plan or a chain of checkpoints.
 The checkpoint intentionally retains its incarnation while continuation is needed.
 
 `SeedFor` is the replacement for today's `PrefixFor` and the public read-only
-seam used by `firstfit.ContinueParagraph`. It rejects nil contexts, nil/zero
-handles, foreign incarnations and changed consumed atomic advances; cancellation
-preserves its cause. Validation uses the checkpoint's already certified records
+seam used by `firstfit.ContinueParagraph`. It rejects nil/zero
+handles, foreign incarnations and changed consumed atomic advances. Validation uses the checkpoint's already certified records
 and retained atomic IDs/values, not a new scan/search of prefix knots. It performs
 no width query, discovery, shaping, CheckFace or metric service call.
 
@@ -647,14 +653,14 @@ that checkpoint; no inference from missing history is permitted. General KP
 continuation is not promised by the proposed Tikray API.
 
 Migration first preserves the existing NoHyphenation gate. Enable hyphenating
-continuation only after carry, provenance, mandatory-boundary and cancellation
+continuation only after carry, provenance, mandatory-boundary and failure-recovery
 regressions pass. The representation is defined here; general support is not
 claimed before those implementations and checks exist.
 
 ## 6. Intrinsic measurement and typography integration
 
 ```go
-func MeasureIntrinsic(ctx context.Context, k *Khipu, discovery *Discovery,
+func MeasureIntrinsic(k *Khipu, discovery *Discovery,
     request MeasureRequest) (IntrinsicWidths, error)
 ```
 
@@ -666,7 +672,7 @@ are shared with breaking. Automatic/multiple-split measurement remains unsupport
 
 Preserve the current intrinsic admission and error ordering, including its
 zero-call rejection paths. On a cache miss, the private measurement discovery
-path shares Discovery's cancellable gate and cache recheck, then:
+path shares Discovery's synchronous gate and cache recheck, then:
 
 1. Count eligible explicit source positions. More than one returns
    `ErrUnsupportedPolicy` before any hyphenator, shaper or CheckFace call. Zero
@@ -779,12 +785,12 @@ names. All destinations above are proposed; current code remains unchanged.
 | `PrepareParagraph` | Returns Khipu and Discovery; no PreparedParagraph. Construction owns all publication validation. |
 | `EncodeParagraph` / `publishCandidateParagraph` | Route one-shot construction through the same immutable compiler and explicit policy. Translate current supported legacy configuration deliberately; do not keep a hidden mutable Khipu representation. |
 | `BindParagraph` | Returns immutable AtomicBinding, not a copied full Khipu. |
-| Breaker `[]int` result plus mutable selections | Context-bearing Tikray result, effective policy snapshot and captured line geometry. |
+| Breaker `[]int` result plus mutable selections | Immutable Tikray result, effective policy snapshot and captured line geometry. |
 | `Freeze(k, breaks, params)` | `Freeze(plan)`; no current selections/provider/width callback consulted. |
 | `MeasureIntrinsic(prepared, request)` | Immutable Khipu + compatible Discovery + ranges; same width and policy semantics. |
 | `BreakCheckpoint.prepared/prefix` | Khipu incarnation plus copied prefix decisions/geometry, replacement references, consumed atomic advances and explicit resume carry. |
 | `Checkpoint(prepared, completePath, acceptedLines)` | `Checkpoint(validatedPlan, acceptedLines)`; validate and preserve decisions, not a bare integer path. |
-| `PrefixFor(binding)` | `BreakCheckpoint.SeedFor(ctx, binding)` validates compatibility and returns detached prefix geometry, accepted-line count, resume position and carry metrics; no prefix search or width/service query. |
+| `PrefixFor(binding)` | `BreakCheckpoint.SeedFor(binding)` validates compatibility and returns detached prefix geometry, accepted-line count, resume position and carry metrics; no prefix search or width/service query. |
 | `HasExplicitDiscretionary` / breaker plane scans | Metadata-only predicates on Khipu/binding plus binding `KnotCount`/`Knot` accessors; preserve lazy first-word rescue without exposing mutable storage. |
 | `paragraph.Prepared.owner/content` | Orchestration keeps Khipu/Discovery, not an execution owner that defines material identity. Source/default services remain stable. |
 | `Continuation.path/history/state` | Use certified plans/checkpoints and copied trial layout inputs; retain accepted fragments independently. No chain of prior workspaces or plans. |
@@ -821,15 +827,15 @@ Before Stage 2 is accepted, require these concrete regressions:
 | Empty input; zero and signed atomic advances | Existing empty/fill/finite-domain behavior; unbound slot cannot be mistaken for bound zero. |
 | Same text constructed twice; foreign binding/discovery/alternative | Different incarnation; incompatible combinations rejected before publication. |
 | Change an executor but retain the exact material/discovery | No false worker-identity rejection; service execution restrictions still honored. |
-| Trial A, then B success/failure/cancellation, then Freeze(A) | Identical A output, without restoring selections; no extra shape/CheckFace/discovery. |
+| Trial A, then B success/failure/rejection, then Freeze(A) | Identical A output, without restoring selections; no extra shape/CheckFace/discovery. |
 | Mutate width callback state after successful breaking | Freeze uses captured widths; callback is neither retained nor called. |
 | Warm/cold discovery and reversed trial order | Same alternatives, tie outcomes and output; failure never cached as empty. |
 | Automatic zero/mixed provider IDs; explicit ignored IDs | Deterministic normalization, duplicate/overflow rejection and original candidate tie order; no rejection of valid zero-ID input. |
 | Unsupported intrinsic positions/variants on a cold cache | Multiple positions: zero provider/shape/CheckFace calls. Multiple permitting variants: zero shape/CheckFace calls; feature errors retain precedence; no cache entry, later layout remains valid. |
 | Intrinsic admission on a warm complete batch | Same admissibility and widths, zero service calls, complete batch unchanged. |
-| Concurrent same-source cache misses; cancelled first requester | Complete immutable publication or retry; no poisoned entry/partial replacement. |
+| Concurrent same-source cache misses; failed first producer | Complete immutable publication or retry; no poisoned entry/partial replacement. |
 | Read-only explicit-marker predicate and first-word overflow | No predicate service/cache calls; preserve first-word explicit rescue without eager automatic discovery. |
-| Seed extraction, mutation, foreign bindings and cancellation | Detached prefix/carry values, no partial seed; `NewTikray` rejects edited locked decisions; no prefix search, width query or service call. |
+| Seed extraction, mutation, foreign bindings and failure | Detached prefix/carry values, no partial seed; `NewTikray` rejects edited locked decisions; no prefix search, width query or service call. |
 | Prefix atomic advance changes versus suffix-only change | Reject incompatible accepted prefix; allow correctly rebound suffix. Typography rejects changed prefix vertical/interior geometry too. |
 | Discretionary cut with empty/nonempty post material | Exact carry/provenance, no original-word duplication or loss; no bidi reset. Gate unsupported successive splitting explicitly. |
 | Initial KP prefix, first-fit continuation, A/B/C widths | Prefix decisions/geometry/policy retained; `PolicyForLine` reports KP for prefix lines and first-fit for suffix lines; zero prefix width queries and search. |

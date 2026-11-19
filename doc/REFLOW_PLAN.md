@@ -1,13 +1,15 @@
 # Region registers and speculative reflow
 
-Design proposal, 2026-11-19. **Not implemented.** This plan establishes the
+Design and migration plan, 2026-11-19. **Khipu PR 1 is implemented; downstream
+adoption and page-layout integration remain deferred.** This plan establishes the
 ownership and decision boundaries needed before general page layout and page
-breaking. It does not select a page-scoring algorithm, change existing APIs or
-promise concurrent use of current paragraph handles. The reusable liquid
-paragraph will be named **`Khipu`**, with immutable SoA base material. One trial's
+breaking. It does not select a page-scoring algorithm or promise concurrent use
+of application paragraph handles. The reusable liquid paragraph is named
+**`Khipu`**, with immutable SoA base material. One trial's
 retained paragraph decisions form an immutable **`Tikray`**. Defining these
-replacements for today's `PreparedParagraph` and mutable `Khipu` state is Stage 1,
-now specified in [REFLOW_KHIPU.md](REFLOW_KHIPU.md). Implementation remains deferred.
+replacements for the former `PreparedParagraph` and mutable `Khipu` state is
+Stage 1, specified in [REFLOW_KHIPU.md](REFLOW_KHIPU.md). Stage 2 is implemented
+in khipu; later stages remain deferred.
 
 The central model is **immutable Khipu → independent Tikrays and page candidates →
 adoption of a successor register collection**. Frame-set trials share stable
@@ -166,7 +168,7 @@ trials. [Stage 1](REFLOW_KHIPU.md) specifies how these identities replace existi
 owner checks without allowing foreign or mismatched decisions to be frozen.
 
 Stage 1 chooses a separate synchronized incarnation-scoped discovery facility
-supplied to execution, with cancellable serialized misses and immutable completed
+supplied to execution, with serialized synchronous misses and immutable completed
 batches. It is not a mutable candidate map in Khipu or the register collection.
 Tikrays retain selected replacement records independently of the facility. See
 [discovery ownership](REFLOW_KHIPU.md#3-discovery-caching-a-concrete-ownership-choice).
@@ -186,7 +188,7 @@ All published coordinates retain the existing finite-domain, full-line-height
 and source-coordinate contracts. Paint and retained content margins remain
 application-owned.
 
-The decisive invariant is: **after trial B succeeds, fails or is cancelled,
+The decisive invariant is: **after trial B succeeds, fails or is rejected,
 trial A remains usable without restoring mutable state by hand.**
 
 ## Atomic realizations
@@ -236,7 +238,7 @@ replacements can be shared within the incarnation while their stable resources
 remain alive.
 
 Publish complete successful batches, including successful empty results. Do not
-cache errors/cancellation as absence, expose partially populated batches or let
+cache errors as absence, expose partially populated batches or let
 worker-local arena IDs escape. “Not explored by this breaker” is not a negative
 discovery result. Trial selection policies must operate on the incarnation's
 fixed candidate universe, possibly with explicit eligibility filtering. Changing
@@ -271,7 +273,7 @@ penalties are compiled values;
 current preparation fixes `HyphenationMode`. This proposal does not silently
 make those settings late-bound.
 
-The proposed `BreakCheckpoint.SeedFor(ctx, binding)` gives sibling breakers a
+The proposed `BreakCheckpoint.SeedFor(binding)` gives sibling breakers a
 validated, detached prefix, accepted-line count, resume position and post-break
 carry metrics. It checks incarnation and consumed atomic advances without prefix
 search, width queries or discovery/service calls. `NewTikray` validates against
@@ -298,7 +300,7 @@ a Khipu or a list of endpoints alone is not sufficient.
 6. Accept one candidate, or discard it and try another from the same snapshot.
 
 Execution success means a valid candidate was computed, not that it was chosen.
-Errors/cancellation publish no partial candidate and leave committed state and
+Errors publish no partial candidate and leave committed state and
 earlier candidates usable. A rejected candidate can have entirely valid output.
 
 **Freezing is not commitment.** A trial may freeze and assemble output while its
@@ -372,9 +374,9 @@ completed immutable discoveries, but own independent workspaces and Tikrays.
 Published Tikrays cannot point into recyclable scratch storage or mutable slices
 owned by another trial.
 
-Memoization serializes misses through the incarnation's cancellable discovery
-gate. A cancelled producer publishes no batch; a waiter can retry with its own
-context. There is no detached producer or cached cancellation. Intrinsic admission
+Memoization serializes synchronous misses through the incarnation's discovery
+gate. A failed producer publishes no batch; a waiter may retry. There is no
+detached producer or public cancellation of lock waiting. Intrinsic admission
 uses the same gate/cache without publishing policy rejections. Immutable results,
 normalized alternative IDs and deterministic tie-breaking keep output independent
 of scheduling and cache warmth.
@@ -403,11 +405,17 @@ Do not move DOM, discovery, CSS types or concrete font types into generic khipu 
 paragraph boundaries. No new serialization/replay contract is proposed. Existing
 replay-v5 controls and immutable ownership remain unchanged.
 
+Public reflow APIs are synchronous and have no context parameter. Contexts are
+reserved for streaming-shaper and font-loader boundaries; internal stream failure
+cancellation and cleanup remain required. No mid-search cancellation is promised.
+
 ## Module-by-module PR sequence
 
-The following is the proposed implementation sequence; no implementation or PR
-is created by this document. PR numbers below identify work units, not repository
-PR identifiers. PR 1 implements Stage 2; PRs 2–4 cover adoption, integration and
+PR 1 is implemented in khipu; PR 2 and later work remain deferred. See the
+[khipu migration record](../../khipu/doc/REFLOW_MIGRATION.md) for the changed APIs,
+validation scope and expected downstream breakage. No GitHub PR or commit has
+been created. PR numbers below identify work units, not repository PR identifiers.
+PR 1 implements Stage 2; PRs 2–4 cover adoption, integration and
 the independent paragraph trials of Stage 3. They do not implement the register
 collections or page solver of Stage 4.
 
@@ -422,10 +430,10 @@ replay v5 and the zero-service/breaker-work equal-width path.
 
 | PR | Scope | Acceptance gate |
 | --- | --- | --- |
-| **1 — khipu: immutable material and Tikray** | Compile the immutable SoA Khipu; add incarnation identity, atomic bindings and Discovery; migrate first-fit and KP to immutable Tikrays and captured geometry; migrate freezing, intrinsic measurement and checkpoint/seed APIs. Include Diagnostics/PolicyForLine. Preserve existing ordinary hyphenation modes and retain the NoHyphenation restriction for continuation. | Khipu ordinary/race/build/vet checks pass. Prove A remains freezable after B succeeds, fails or is cancelled; validate binding identity, detached accessors, variant normalization, intrinsic early admission, cache retry/cancellation and seed ownership. Existing supported output remains equivalent. Typography and tytui may still fail to compile against the changed APIs. |
-| **2 — typography: adopt the new contracts** | Migrate Run, Prepared, Layout, intrinsic measurement and existing StartFlow/Continuation.Fit orchestration to PR 1. Preserve the existing client behavior, CSS assembly and retained rendering boundaries. Keep the equal-width fast path geometry-only. | Typography ordinary/race/build/vet checks, dependency audits and adapter regressions pass against PR 1. Cover A/B/C width history, cancellation, atomic placement, source/feature domains and collection of working state while frozen fragments survive. Tytui may remain temporarily incompatible. |
+| **1 — khipu: immutable material and Tikray** | Compile the immutable SoA Khipu; add incarnation identity, atomic bindings and Discovery; migrate first-fit and KP to immutable Tikrays and captured geometry; migrate freezing, intrinsic measurement and checkpoint/seed APIs. Include Diagnostics/PolicyForLine. Preserve existing ordinary hyphenation modes and retain the NoHyphenation restriction for continuation. | Khipu ordinary/race/build/vet checks pass. Prove A remains freezable after B succeeds, fails or is rejected; validate binding identity, detached accessors, variant normalization, intrinsic early admission, cache retry/failure recovery and seed ownership. Existing supported output remains equivalent. Typography and tytui may still fail to compile against the changed APIs. |
+| **2 — typography: adopt the new contracts** | Migrate Run, Prepared, Layout, intrinsic measurement and existing StartFlow/Continuation.Fit orchestration to PR 1. Preserve the existing client behavior, CSS assembly and retained rendering boundaries. Keep the equal-width fast path geometry-only. | Typography ordinary/race/build/vet checks, dependency audits and adapter regressions pass against PR 1. Cover A/B/C width history, failure recovery, atomic placement, source/feature domains and collection of working state while frozen fragments survive. Tytui may remain temporarily incompatible. |
 | **3 — tytui/tycli: complete the migration** | Update application consumers and affected test helpers; adapt tests to new source APIs while retaining their assertions. Verify paragraph/document layout, nested atomics, proofs, CLI behavior and offline replay. Update current usage documentation. | Establish a fully passing migration baseline across khipu, typography and tytui: ordinary/race/build/vet plus relevant dependency audits, adapter and integration regressions. Preserve current CSS/proof/replay-v5 controls and historical rejection evidence; do not regenerate controls to conceal drift. No downstream API breakage from PRs 1–3 remains. |
-| **4 — typography: expose independent paragraph trials** | Define and expose the client-facing trial orchestration API using reusable Khipu/Discovery, immutable Tikrays and matching copied assembly inputs. Allow independent constraints and atomic realizations; retain full freezing/assembly initially. Update application integration where needed. | Required owning and integration checks pass, preserving the PR 3 baseline. Prove retry/rollback isolation, freeze or assemble A after every outcome of B, changed-atomic prefix compatibility, cancellation recovery, bounded retention and unchanged equal-width reuse. Published results must not retain trial workspaces or preparation unnecessarily. |
+| **4 — typography: expose independent paragraph trials** | Define and expose the client-facing trial orchestration API using reusable Khipu/Discovery, immutable Tikrays and matching copied assembly inputs. Allow independent constraints and atomic realizations; retain full freezing/assembly initially. Update application integration where needed. | Required owning and integration checks pass, preserving the PR 3 baseline. Prove retry/rollback isolation, freeze or assemble A after every outcome of B, changed-atomic prefix compatibility, failure recovery, bounded retention and unchanged equal-width reuse. Published results must not retain trial workspaces or preparation unnecessarily. |
 
 PR 1 is substantial. Organize its review into focused commits for material and
 binding, discovery, breaker decisions/freezing, and checkpoints. Its completed
@@ -458,7 +466,7 @@ Register collections and bounded page trials follow as a separate series in
 css-box-layout and application integration. Define their typed integration and
 page-candidate boundaries before implementation; the page-decision protocol is
 still outside Stage 1's contracts. Hyphenating continuation gets its own PR and
-carry/provenance/mandatory-boundary/cancellation acceptance gate before removing
+carry/provenance/mandatory-boundary/failure-recovery acceptance gate before removing
 the NoHyphenation restriction. It is not a prerequisite for migrating the current
 bounded flow profile. Trial-loop cost measurements and any optimization follow
 Stage 5, preserving historical measurement evidence; concurrent execution follows
@@ -467,8 +475,9 @@ Stage 6's ownership and service audits. The upstream bidi fix remains deferred.
 ## Staged work and acceptance gates
 
 These stages are independent of FLOW.md's completed P1–P6 sequence. Stage 1's
-design is documented; stages 2–6 and all implementation acceptance tests remain
-deferred. Specification completion does not claim runtime validation.
+design is documented and Stage 2 is implemented with khipu's owning checks.
+Stages 3–6 remain deferred. Typography and tytui currently fail compilation at
+the unmigrated paragraph API, as permitted between PRs 1–3.
 
 1. **Define the new immutable SoA Khipu and its companion contracts — documented.**
    [REFLOW_KHIPU.md](REFLOW_KHIPU.md) is the reviewable specification and contains
@@ -482,7 +491,7 @@ deferred. Specification completion does not claim runtime validation.
      writing geometry back into Khipu or requiring duplicate base knots.
    - The incarnation-scoped synchronized discovery facility: complete immutable
      publication, normalized replacement IDs, early intrinsic admission,
-     errors/cancellation and lifetime. Keep selected alternatives out of both
+     errors and lifetime. Keep selected alternatives out of both
      Khipu and discovery state.
    - Independent immutable Tikrays containing endpoints, variants, binding identity,
      stable geometry/policy and references needed for freezing after later trials.
@@ -497,9 +506,9 @@ deferred. Specification completion does not claim runtime validation.
 
    The gate is a reviewable ownership/API specification with aliasing, identity,
    lifetime and branch-isolation cases. Naming and SoA are settled; exact Go fields
-   and signatures are specified in the Stage 1 document and remain unimplemented.
+   and signatures are specified in the Stage 1 document.
 
-2. **Implement the material/decision separation in khipu.** Construct the immutable
+2. **Implement the material/decision separation in khipu — implemented in PR 1.** Construct the immutable
    Khipu, supply trial bindings and produce independent Tikrays; make freezing consume
    those Tikrays. Preserve existing algorithms/output while proving candidate A
    remains valid after all outcomes of B. This requires the Stage 1 design first.
@@ -515,7 +524,7 @@ deferred. Specification completion does not claim runtime validation.
    memory retained by live/discarded candidates. Evaluate binding reuse and
    reduced materialization against output equivalence.
 6. **Enable concurrency after ownership audits.** Exercise shared-cache misses,
-   cancellations and service restrictions under the race detector; test the chosen
+   stream failures and service restrictions under the race detector; test the chosen
    page-decision protocol against obsolete candidate inputs.
    Compare concurrent results with serialized results before claiming support.
 
@@ -525,7 +534,7 @@ Required acceptance cases include:
   remain independent. Rejection requires no restoration of an earlier version.
 - Published Khipu planes and records cannot be mutated through accessors, bindings,
   discovery or trials. Changed fixed inputs yield a different incarnation.
-- A remains freezable/renderable after B succeeds, fails or is cancelled; its
+- A remains freezable/renderable after B succeeds, fails or is rejected; its
   endpoints, selections, replacement records and bindings remain paired.
 - Diagnostic/policy inspection returns independent values, preserves availability
   flags and mixed KP/first-fit attribution, and handles invalid indexes and
@@ -556,8 +565,10 @@ Required acceptance cases include:
 
 Implementation must run the owning ordinary/race/build/vet suites and relevant
 cross-module checks under the [PR verification policy](#temporary-breakage-and-verification-policy),
-including the complete migration baseline at PR 3. This document adds no implementation or new validation
-evidence. The upstream bidi preparation rejection/stall limitation remains
+including the complete migration baseline at PR 3. PR 1 passed khipu's ordinary
+and race suites, build, vet and module-tidiness checks; see its
+[verification record](../../khipu/doc/REFLOW_MIGRATION.md). This does not establish
+a migrated downstream baseline. The upstream bidi preparation rejection/stall limitation remains
 separate deferred work, not an accepted result or a reason to reset bidi context
 at frame boundaries. General vertical elasticity and atomic-interior fragmentation
 are also outside this plan.
