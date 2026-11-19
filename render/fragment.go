@@ -1,7 +1,6 @@
 package render
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/npillmayer/typography/layout"
@@ -23,21 +22,16 @@ type FragmentInput struct {
 // is local to the returned proof; knot indexes and source anchors stay original.
 // VisualOrder runs once per detached directional glyph fragment. Atomic drawing
 // and frame transforms remain application-owned; use Fragment.AtomicPlacements.
-// Errors/cancellation return no partial proof. No working preparation is retained.
-func BuildFragmentProof(ctx context.Context, input FragmentInput, services Services) (*ParagraphProof, error) {
+// Errors return no partial proof. No working preparation is retained.
+func BuildFragmentProof(input FragmentInput, services Services) (*ParagraphProof, error) {
 	f := input.Fragment
-	if ctx == nil || f == nil || f.Frozen() == nil || services.Backend == nil || services.Identity == nil {
+	if f == nil || f.Frozen() == nil || services.Backend == nil || services.Identity == nil {
 		return nil, fmt.Errorf("fragment proof requires retained placements and rendering services")
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+
 	lines := f.Lines()
 	placements := make([]layout.Line, len(lines))
 	for i, line := range lines {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		horizontal, ok := f.Frozen().Line(line.OriginalIndex)
 		if !ok {
 			return nil, fmt.Errorf("fragment proof has no original line %d", line.OriginalIndex)
@@ -45,5 +39,5 @@ func BuildFragmentProof(ctx context.Context, input FragmentInput, services Servi
 		placements[i] = line.Line
 		placements[i].Horizontal = horizontal
 	}
-	return buildRetainedProof(ctx, ParagraphInput{Frozen: f.Frozen(), Text: input.Text, Paint: input.Paint}, services, placements)
+	return buildRetainedProof(ParagraphInput{Frozen: f.Frozen(), Text: input.Text, Paint: input.Paint}, services, placements)
 }

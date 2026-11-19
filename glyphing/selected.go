@@ -1,7 +1,6 @@
 package glyphing
 
 import (
-	"context"
 	"fmt"
 	"reflect"
 	"slices"
@@ -63,13 +62,7 @@ func (s *SelectedFonts) Clone() *SelectedFonts {
 // copies mutable metadata, and checks coverage acceptance for every selected face.
 // Acceptance checks perform no glyph queries. Only explicit
 // fallback references are eligible. Serialize operations sharing this style mapper.
-func NewStyleMapper(ctx context.Context, fonts SelectedFonts, coverage Coverage) (*StyleMapper, error) {
-	if ctx == nil {
-		return nil, fmt.Errorf("nil context")
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+func NewStyleMapper(fonts SelectedFonts, coverage Coverage) (*StyleMapper, error) {
 	if fonts.Size <= 0 || fonts.Size >= dimen.Fil {
 		return nil, fmt.Errorf("font size must be positive and finite")
 	}
@@ -78,9 +71,6 @@ func NewStyleMapper(ctx context.Context, fonts SelectedFonts, coverage Coverage)
 	}
 	r := &StyleMapper{selected: SelectedFonts{Default: fonts.Default, Size: fonts.Size, Rules: slices.Clone(fonts.Rules), Fallbacks: slices.Clone(fonts.Fallbacks)}, faces: make(map[string]FaceEntry), coverage: coverage, defaultID: fonts.Default}
 	for _, entry := range fonts.Faces {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		if nilFontService(entry.Face) || entry.Resource == nil {
 			return nil, fmt.Errorf("incomplete selected font entry")
 		}
@@ -95,9 +85,6 @@ func NewStyleMapper(ctx context.Context, fonts SelectedFonts, coverage Coverage)
 	}
 	seen := map[string]bool{}
 	use := func(id string) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
 		entry, ok := r.faces[id]
 		if !ok {
 			return fmt.Errorf("unresolved selected font %q", id)
@@ -131,16 +118,11 @@ func NewStyleMapper(ctx context.Context, fonts SelectedFonts, coverage Coverage)
 		return nil, fmt.Errorf("unreferenced selected font entry")
 	}
 	for _, entry := range r.selected.Faces {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		if err := coverage.CheckFace(entry.Face); err != nil {
 			return nil, fmt.Errorf("coverage for selected resource %q: %w", entry.Info.ResourceID, err)
 		}
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+
 	return r, nil
 }
 

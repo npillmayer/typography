@@ -1,4 +1,13 @@
 ## glyphing/
+
+Context policy (2026-11-19): typesetting, geometry, retained proofs, replay,
+and document execution are synchronous and have no context argument. Contexts
+are confined to streaming coordination and font discovery/loading. Streaming
+callers create a local background context; consumer failure still cancels and
+joins the producer before cleanup. Errors publish no partial result and preserve
+previous immutable output. TUI layout jobs finish serially; stale results are
+discarded, while font work remains cancellable. This supersedes earlier
+cancellation requirements for typesetting in this document.
 # Paragraph
 
 Package "paragraph" orchestrates the translation of paragraphs of text into
@@ -33,7 +42,7 @@ Start with itemized text and a matching style resolver. The
 and itemization. Keep the returned `styled.Text` intact.
 
 The snippets below are function bodies returning `error`. They assume a nonnil
-`ctx`, itemized `text`, and its `mapper` backed by the OpenType adapter. Import
+itemized `text`, and its `mapper` backed by the OpenType adapter. Import
 `paragraph` from `github.com/npillmayer/typography/glyphing/paragraph`, `glyphot`
 from `github.com/npillmayer/typography/glyphing/adapter/opentype`, and `khipu`,
 `khipu/contracts`, `khipu/dimen`, `uax/bidi` from `github.com/npillmayer/`.
@@ -56,7 +65,7 @@ params := paragraph.Params{
         Default: paragraph.LineHeight{Kind: paragraph.NormalHeight},
     },
 }
-result, err := paragraph.Run(ctx, input, params, config)
+result, err := paragraph.Run(input, params, config)
 if err != nil { return err }
 fmt.Printf("%d lines, %.2f bp high\n",
     len(result.VList.Lines()), result.VList.Box().Extent)
@@ -103,13 +112,13 @@ Use `Prepare` when the same text needs measurement, resizing or frame flow.
 It shapes base text and resolves bidi without requiring a target width.
 
 ```go
-prepared, err := paragraph.Prepare(ctx, input,
+prepared, err := paragraph.Prepare(input,
     khipu.PrepareOptions{Hyphenation: khipu.NoHyphenation}, config)
 if err != nil { return err }
 request := paragraph.LayoutRequest{Params: params}
 for _, width := range []dimen.DU{240 * dimen.BP, 180 * dimen.BP} {
     request.Params.Constraints.Width = width
-    resized, err := prepared.Layout(ctx, request)
+    resized, err := prepared.Layout(request)
     if err != nil { return err }
     fmt.Printf("width %v: %d lines\n", width, len(resized.VList.Lines()))
 }
@@ -130,7 +139,7 @@ explicitly sets both skips to zero.
 Measurement needs preparation but no target width, line-height or object heights:
 
 ```go
-widths, err := prepared.MeasureIntrinsic(ctx, khipu.MeasureRequest{})
+widths, err := prepared.MeasureIntrinsic(khipu.MeasureRequest{})
 if err != nil { return err }
 fmt.Printf("min-content %v; max-content %v\n", widths.MinContent, widths.MaxContent)
 ```
@@ -154,13 +163,13 @@ same strictly ordered anchors to `Prepare`:
 
 ```go
 anchors := []contracts.AtomicAnchor{{ID: 1, ByteOffset: 2}}
-mixedText, _, err := mapper.ItemizeInline(ctx, "A \uFFFC B", nil, anchors)
+mixedText, _, err := mapper.ItemizeInline("A \uFFFC B", nil, anchors)
 if err != nil { return err }
-mixed, err := paragraph.Prepare(ctx, paragraph.Input{
+mixed, err := paragraph.Prepare(paragraph.Input{
     Text: mixedText, Direction: bidi.LeftToRight, Atomics: anchors,
 }, khipu.PrepareOptions{Hyphenation: khipu.NoHyphenation}, config)
 if err != nil { return err }
-withObject, err := mixed.Layout(ctx, paragraph.LayoutRequest{
+withObject, err := mixed.Layout(paragraph.LayoutRequest{
     Params: params,
     Atomics: []paragraph.AtomicBox{{
         ID: 1, BorderWidth: 30 * dimen.BP, BorderHeight: 20 * dimen.BP,
@@ -189,11 +198,11 @@ frames := []paragraph.Frame{
 }
 flowRequest := paragraph.LayoutRequest{Params: params}
 flowRequest.Params.Constraints.Width = frames[0].Width
-token, err := prepared.StartFlow(ctx, flowRequest)
+token, err := prepared.StartFlow(flowRequest)
 if err != nil { return err }
 var placed []*layout.Fragment
 for _, frame := range frames {
-    step, err := token.Fit(ctx, frame)
+    step, err := token.Fit(frame)
     if err != nil { return err } // The input token remains retryable.
     placed = append(placed, step.Placed)
     token = step.Continuation
@@ -225,8 +234,8 @@ the application; this API places whole lines without height packing.
 ## Equal-Width Height Cuts
 
 This is something akin to TeX's `\vsplit`<*n*>` to `<*dimen*>.
-For an existing `VList`, use `Fragment(ctx, result.VList)` to get a whole view.
-`SplitFragment(ctx, whole, at)` splits before local line `at`, which must be an
+For an existing `VList`, use `Fragment(result.VList)` to get a whole view.
+`SplitFragment(whole, at)` splits before local line `at`, which must be an
 interior boundary (`0 < at < len(whole.Lines())`). Both halves retain full line
 heights; the second is rebased to local Y=0. You can split either half again.
 
@@ -238,15 +247,15 @@ uses explicit zero side skips so the key's skip triples are also zero:
 fixedRequest := paragraph.LayoutRequest{
     Params: params, Horizontal: &paragraph.HorizontalLayout{},
 }
-fixed, err := prepared.Layout(ctx, fixedRequest)
+fixed, err := prepared.Layout(fixedRequest)
 if err != nil { return err }
 key := paragraph.FragmentReuseKey{
     Width: fixedRequest.Params.Constraints.Width,
     Source: 1, Styles: 1, Fonts: 1, LineHeight: 1, Atomics: 1, Policy: 1,
 }
-whole, err := paragraph.Fragment(ctx, fixed.VList)
+whole, err := paragraph.Fragment(fixed.VList)
 if err != nil { return err }
-fit, err := paragraph.FitFragment(ctx, whole, key, key, 120)
+fit, err := paragraph.FitFragment(whole, key, key, 120)
 if err != nil { return err }
 fmt.Println(fit.Status, fit.Placed.Box(), fit.Remainder.Box())
 ```
@@ -275,9 +284,7 @@ Check errors before consuming results: failures publish no partial output and
 remain retryable. Use `errors.As(err, &stageErr)` with `var stageErr *paragraph.Error`
 to inspect the stage of preparation/layout/measurement/flow failures, and
 `errors.Is` for underlying causes. Standalone fragment operations return errors
-without the paragraph-stage wrapper. Pass a nonnil context to every operation;
-cancellation preserves its cause, but synchronous collaborators cannot always be
-interrupted mid-call. Known mixed-bidi preparation rejection/stall cases limit
+without the paragraph-stage wrapper. Operations run synchronously to completion and preserve backend error causes. Known mixed-bidi preparation rejection/stall cases limit
 supported input; see [the documented limits](../../doc/FLOW.md#bidi-and-shaping).
 
 For architecture and design rationale, see

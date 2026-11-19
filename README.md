@@ -1,5 +1,14 @@
 # typography
 
+Context policy (2026-11-19): typesetting, geometry, retained proofs, replay,
+and document execution are synchronous and have no context argument. Contexts
+are confined to streaming coordination and font discovery/loading. Streaming
+callers create a local background context; consumer failure still cancels and
+joins the producer before cleanup. Errors publish no partial result and preserve
+previous immutable output. TUI layout jobs finish serially; stale results are
+discarded, while font work remains cancellable. This supersedes earlier
+cancellation requirements for typesetting in this document.
+
 Typography turns styled text and preselected fonts into immutable paragraph
 layouts, then provides a separate path for rendering retained glyph-outline
 proofs. It supports CSS line heights, fixed inline objects and bounded flow across
@@ -43,12 +52,12 @@ Prepare selected faces and itemize:
     glyphServices := glyphot.Services{}
     entry, err := glyphServices.Load(ctx, path, nil)
     if err != nil { return err }
-    resolver, err := glyphing.NewStyleMapper(ctx, glyphing.SelectedFonts{
+    resolver, err := glyphing.NewStyleMapper(glyphing.SelectedFonts{
         Faces: []glyphing.FaceEntry{entry},
         Default: entry.Info.ResourceID, Size: size,
     }, glyphServices)
     if err != nil { return err }
-    text, bindings, err := resolver.Itemize(ctx, processedText, spans)
+    text, bindings, err := resolver.Itemize(processedText, spans)
 
 Handle errors, then pass text and resolver to glyphing/paragraph. Construct fresh
 streams with glyphot.NewStream and retain bindings for diagnostics.
@@ -57,7 +66,7 @@ Retain paint independently with style.ProjectPaint(spans).
 After layout completes:
 
     drawing := renderot.New()
-    proof, err := render.BuildParagraphProof(ctx, render.ParagraphInput{
+    proof, err := render.BuildParagraphProof(render.ParagraphInput{
         Frozen: result.Frozen, VList: result.VList,
         Text: processedText, Paint: paint,
     }, render.Services{Backend: drawing, Identity: drawing})

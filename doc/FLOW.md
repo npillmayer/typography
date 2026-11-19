@@ -1,5 +1,14 @@
 # Paragraph flow across frames of different sizes
 
+Context policy (2026-11-19): typesetting, geometry, retained proofs, replay,
+and document execution are synchronous and have no context argument. Contexts
+are confined to streaming coordination and font discovery/loading. Streaming
+callers create a local background context; consumer failure still cancels and
+joins the producer before cleanup. Errors publish no partial result and preserve
+previous immutable output. TUI layout jobs finish serially; stale results are
+discarded, while font work remains cancellable. This supersedes earlier
+cancellation requirements for typesetting in this document.
+
 Investigation and production plan: 2026-11-18. This document records current
 capabilities, experimental evidence and staged production work. P1's geometry-only
 height cuts and P2's khipu checkpoint/seeded first-fit primitives are implemented.
@@ -225,7 +234,7 @@ Their upstream fix remains separate; P6 defines the production exposure gate.
 
 ### P1 — Promote the geometry-only equal-width path
 
-**Implemented:** `paragraph.FitFragment(ctx, fragment, sourceKey, targetKey, height)`
+**Implemented:** `paragraph.FitFragment(fragment, sourceKey, targetKey, height)`
 returns placed/remainder fragments, vertical status and original-index horizontal
 overflow diagnostics. `FragmentReuseKey` is a caller attestation with width,
 original skip triples and nonzero input revisions. P1 checks the whole frozen
@@ -270,7 +279,7 @@ No new performance claim is made; E3 benchmark evidence was not regenerated.
 
 ### P2 — Add a production checkpoint and seeded first-fit entry in khipu
 
-**Implemented:** `owner.Checkpoint(ctx, prepared, completePath, acceptedLines)`
+**Implemented:** `owner.Checkpoint(prepared, completePath, acceptedLines)`
 returns an opaque `khipu.BreakCheckpoint`. It validates the entire ordinary path
 against immutable prepared knots, including the final trailer and mandatory
 breaks in the unaccepted suffix, then copies the accepted prefix. Certification
@@ -278,7 +287,7 @@ establishes legal boundaries, not width fit, optimality or a breaker execution
 receipt; callers supply their successful complete path. Both FF and KP paths are
 supported. Zero accepted lines and the complete accepted path are valid.
 
-`firstfit.ContinueParagraph(ctx, binding, geometry, checkpoint)` uses the same
+`firstfit.ContinueParagraph(binding, geometry, checkpoint)` uses the same
 first-fit loop as ordinary breaking, starting immediately after the last locked
 logical knot. `BreakCheckpoint.PrefixFor` checks the exact preparation identity,
 NoHyphenation admission and aligned plane lengths and returns a detached prefix;
@@ -341,8 +350,8 @@ claim or upstream bidi fix is part of P2.
 
 ### P3 — Add typography continuation with full assembly and unified dispatch
 
-**Implemented:** `Prepared.StartFlow(ctx, LayoutRequest)` returns an opaque
-`Continuation`; `Continuation.Fit(ctx, Frame)` returns a detached `FlowResult`
+**Implemented:** `Prepared.StartFlow(LayoutRequest)` returns an opaque
+`Continuation`; `Continuation.Fit(Frame)` returns a detached `FlowResult`
 with placed/remainder fragments, progress/overflow diagnostics and a new token
 only while content remains. Frame supplies width (DU) and height (big points).
 The fixed private state owns copied layout/atomic values and borrowed stable
@@ -434,14 +443,14 @@ limitation remains deferred. P4 rendering is documented below.
 
 ### P4 — Render positioned fragments without relayout
 
-**Implemented (2026-11-18):** `render.BuildFragmentProof(ctx, FragmentInput,
+**Implemented (2026-11-18):** `render.BuildFragmentProof(FragmentInput,
 Services)` returns the existing detached `ParagraphProof` type. The input carries
 one immutable `layout.Fragment` plus the whole paragraph's processed text and
 paint. `Glyph.Line` is fragment-local; frozen knot indexes and UTF-8 anchors stay
 original. Empty ranges draw nothing. The ordinary and fragment entry points share
 the same internal walker, preserving outline/order/error precedence.
 
-`tytui/documentlayout.BuildFragmentProof(ctx, result, placements, services)` and
+`tytui/documentlayout.BuildFragmentProof(result, placements, services)` and
 `WriteFragmentSVG` compose explicit `PositionedFragment` values. Each associates
 a GroupID and fragment with `FrameOrigin` plus `Offset`, both in big points.
 Their sum is the fragment origin; the old owner's origin is not added. Callers
@@ -477,7 +486,7 @@ Full VList/ordinary document proof APIs remain valid and unchanged in behavior.
 original equal-width proof and with narrower continuation oracles. Cover bidi,
 ligatures/paint, nested fixed opaque content, negative advances, multiple owners
 and late outline failure. Rendering makes no metric, shaping, binding or breaker
-calls and returns no partial proof on error/cancellation.
+calls and returns no partial proof on error.
 
 **P4 verification (2026-11-18):** full ordinary/race suites, build and vet passed
 in typography, tytui, khipu and css-box-layout, including dependency audits,
@@ -486,13 +495,13 @@ controls. New owning regressions compare equal-width and narrower continuation
 glyph/source/paint/geometry, count directional ordering, render after preparation
 collection, and cover real-font ligatures/bidi, multiple owners, nested opaque
 children, signed advances, precise atomic origins, empty ranges, source mismatch,
-detached results, late outline failure/cancellation and SVG failure atomicity.
+detached results, late outline failure and SVG failure atomicity.
 Historical fixtures and experiment measurements were not regenerated. P5 is
 documented below; the upstream bidi fix remains deferred.
 
 ### P5 — Integrate a bounded flow invocation into documentlayout and tycli
 
-**Implemented (2026-11-18):** `Document.LayoutFlow(ctx, FlowRequest, Config)`
+**Implemented (2026-11-18):** `Document.LayoutFlow(FlowRequest, Config)`
 accepts `LayoutRequest` (source containing width/breaker) and an ordered copied
 `[]FlowFrame` of unique IDs and float64 CSS-pixel content rectangles. The selected
 root must contain exactly one direct normalized inline group; every opaque

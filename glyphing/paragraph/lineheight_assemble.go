@@ -1,7 +1,6 @@
 package paragraph
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"sort"
@@ -14,15 +13,12 @@ import (
 )
 
 // assembleLineHeight measures the strut, source styles and frozen lines in that
-// order. Only a fully assembled, cancellation-checked vlist is published.
-func assembleLineHeight(ctx context.Context, f *khipu.FrozenKhipu, l *LineLayout, text styled.Text, cfg khipu.Config, atomics map[contracts.AtomicID]AtomicBox) (*assembly, error) {
+// order. Only a fully assembled vlist is published.
+func assembleLineHeight(f *khipu.FrozenKhipu, l *LineLayout, text styled.Text, cfg khipu.Config, atomics map[contracts.AtomicID]AtomicBox) (*assembly, error) {
 	// The caller supplies CSS-processed text. An empty source has no text,
 	// preserved whitespace/newline, or atomic content, so it creates no line.
 	// Keep the frozen diagnostic result, but do not turn its final fill into a strut.
 	if text.Raw().Len() == 0 && len(atomics) == 0 {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		return &assembly{frozen: f}, nil
 	}
 	strut, err := cssFaceMetrics(cfg.Streaming.Defaults)
@@ -33,18 +29,15 @@ func assembleLineHeight(ctx context.Context, f *khipu.FrozenKhipu, l *LineLayout
 	if err != nil {
 		return nil, err
 	}
-	runs, err := lineHeightSourceMetrics(ctx, f, text, cfg)
+	runs, err := lineHeightSourceMetrics(f, text, cfg)
 	if err != nil {
 		return nil, err
 	}
 	v := &assembly{frozen: f}
 	top := 0.0
 	for i := 0; i < f.LineCount(); i++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		line, _ := f.Line(i)
-		extents, err := measureLineHeight(ctx, f, line, l, runs, atomics, lineHeightExtents{sa, sd})
+		extents, err := measureLineHeight(f, line, l, runs, atomics, lineHeightExtents{sa, sd})
 		if err != nil {
 			return nil, err
 		}
@@ -53,28 +46,23 @@ func assembleLineHeight(ctx context.Context, f *khipu.FrozenKhipu, l *LineLayout
 			return nil, err
 		}
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+
 	v.box.Extent = top
 	return v, nil
 }
 
 // lineHeightSourceMetrics excludes attached marker-only styles before resolving
 // source metrics for surviving spaces. Frozen glyphs retain their own metrics.
-func lineHeightSourceMetrics(ctx context.Context, f *khipu.FrozenKhipu, text styled.Text, cfg khipu.Config) ([]metricRun, error) {
+func lineHeightSourceMetrics(f *khipu.FrozenKhipu, text styled.Text, cfg khipu.Config) ([]metricRun, error) {
 	var excluded []khipu.ByteRange
 	for i := 0; i < f.KnotCount(); i++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		if _, ok := f.Atomic(i); ok {
 			knot, _ := f.Knot(i)
 			excluded = append(excluded, knot.Source.Bytes)
 		}
 	}
 	sort.Slice(excluded, func(i, j int) bool { return excluded[i].Start < excluded[j].Start })
-	return sourceMetrics(ctx, text, cfg, excluded)
+	return sourceMetrics(text, cfg, excluded)
 }
 
 // lineHeightExtents holds signed effective distances above and below the baseline.
@@ -115,11 +103,8 @@ func (e *lineHeightExtents) includeText(l *LineLayout, start, end uint64, m font
 
 // measureLineHeight combines atomic geometry, frozen glyph metrics and surviving
 // source spaces. Generated fill and silent discretionary text do not contribute.
-func measureLineHeight(ctx context.Context, f *khipu.FrozenKhipu, line khipu.FrozenLine, l *LineLayout, runs []metricRun, atomics map[contracts.AtomicID]AtomicBox, extents lineHeightExtents) (lineHeightExtents, error) {
+func measureLineHeight(f *khipu.FrozenKhipu, line khipu.FrozenLine, l *LineLayout, runs []metricRun, atomics map[contracts.AtomicID]AtomicBox, extents lineHeightExtents) (lineHeightExtents, error) {
 	for k := line.FirstKnot; k < line.FirstKnot+line.KnotCount; k++ {
-		if err := ctx.Err(); err != nil {
-			return lineHeightExtents{}, err
-		}
 		if id, ok := f.Atomic(k); ok {
 			box, exists := atomics[id]
 			if !exists {

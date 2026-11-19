@@ -1,7 +1,6 @@
 package paragraph
 
 import (
-	"context"
 	"slices"
 
 	"github.com/npillmayer/khipu"
@@ -64,37 +63,31 @@ type FlowResult struct {
 // reshaped. Use Fit for each frame; release this initial token and all intermediate
 // tokens/preparation when the paragraph fully flows. Completed frozen fragments
 // need no working handle. There is no cross-paragraph cache or Close operation.
-func (p *Prepared) StartFlow(ctx context.Context, request LayoutRequest) (*Continuation, error) {
-	if ctx == nil {
-		return nil, &Error{StageInput, invalidInput("nil context")}
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, &Error{StageInput, err}
-	}
+func (p *Prepared) StartFlow(request LayoutRequest) (*Continuation, error) {
 	if p == nil || p.owner == nil || p.content == nil {
 		return nil, &Error{StageInput, invalidInput("uninitialized preparation")}
 	}
 	if p.hyphenation != khipu.NoHyphenation {
 		return nil, &Error{StageInput, khipu.ErrUnsupportedPolicy}
 	}
-	b, err := p.bindLayout(ctx, request)
+	b, err := p.bindLayout(request)
 	if err != nil {
 		return nil, err
 	}
-	path, err := breakLayout(ctx, p.owner, b.bound, b.params, b.geometry)
+	path, err := breakLayout(p.owner, b.bound, b.params, b.geometry)
 	if err != nil {
 		return nil, err
 	}
-	result, err := finishWithBreaks(ctx, p.owner, b.bound, b.params, b.geometry, p.text, p.config, p.runs, b.boxes, path)
+	result, err := finishWithBreaks(p.owner, b.bound, b.params, b.geometry, p.text, p.config, p.runs, b.boxes, path)
 	if err != nil {
 		return nil, err
 	}
-	f, err := Fragment(ctx, result.VList)
+	f, err := Fragment(result.VList)
 	if err != nil {
 		return nil, &Error{StageAssemble, err}
 	}
 	// Validate even suppressed-empty owners and derived local geometry at entry.
-	if _, err = fitFlowFragment(ctx, f, nil, b.params.Constraints.Width, 0); err != nil {
+	if _, err = fitFlowFragment(f, nil, b.params.Constraints.Width, 0); err != nil {
 		return nil, &Error{StageAssemble, err}
 	}
 	return &Continuation{state: &flowState{p, b.params, b.geometry, b.boxes, b.advances}, remainder: f, path: slices.Clone(path), width: b.params.Constraints.Width, breaker: b.params.Breaker}, nil
@@ -115,15 +108,9 @@ func (c *Continuation) Remainder() *layout.Fragment {
 // checkpoint, searches only the suffix, then freezes/assembles the complete path.
 // The original paragraph styles and bidi context remain in use. Every boundary
 // is eligible; no widows/orphans, target-height packing or rendering is implied.
-// Errors/cancellation return nil with a stage and cause, preserving older tokens
+// Errors return nil with a stage and cause, preserving older tokens
 // and fragments. No-progress is a successful explicit remainder, not an error.
-func (c *Continuation) Fit(ctx context.Context, frame Frame) (*FlowResult, error) {
-	if ctx == nil {
-		return nil, &Error{StageInput, invalidInput("nil context")}
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, &Error{StageInput, err}
-	}
+func (c *Continuation) Fit(frame Frame) (*FlowResult, error) {
 	if c == nil || c.state == nil || c.remainder == nil || frame.Width < 0 || frame.Width >= dimen.Fil || !fitBounded(frame.Height) || frame.Height < 0 {
 		return nil, &Error{StageInput, invalidInput("continuation or frame")}
 	}
@@ -131,13 +118,13 @@ func (c *Continuation) Fit(ctx context.Context, frame Frame) (*FlowResult, error
 	reused := true
 	if frame.Width != c.width && c.remainder.Range().Start != c.remainder.Range().End {
 		var err error
-		current, err = c.reflow(ctx, frame.Width)
+		current, err = c.reflow(frame.Width)
 		if err != nil {
 			return nil, err
 		}
 		reused = false
 	}
-	fit, err := fitFlowFragment(ctx, current.remainder, current.history, current.width, frame.Height)
+	fit, err := fitFlowFragment(current.remainder, current.history, current.width, frame.Height)
 	if err != nil {
 		return nil, &Error{StageAssemble, err}
 	}
@@ -145,15 +132,10 @@ func (c *Continuation) Fit(ctx context.Context, frame Frame) (*FlowResult, error
 	if fit.Status != FitComplete {
 		history := slices.Clone(current.history)
 		for _, line := range fit.Placed.Lines() {
-			if err := ctx.Err(); err != nil {
-				return nil, &Error{StageAssemble, err}
-			}
 			history = append(history, line.Horizontal.TargetWidth)
 		}
 		out.Continuation = &Continuation{state: current.state, remainder: fit.Remainder, path: current.path, history: history, width: current.width, breaker: current.breaker}
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, &Error{StageAssemble, err}
-	}
+
 	return out, nil
 }

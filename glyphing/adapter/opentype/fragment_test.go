@@ -26,11 +26,11 @@ func TestFragmentRealFontsAndOriginalSources(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		mapper, err := glyphing.NewStyleMapper(t.Context(), glyphing.SelectedFonts{Faces: []glyphing.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 12 * dimen.BP}, Services{})
+		mapper, err := glyphing.NewStyleMapper(glyphing.SelectedFonts{Faces: []glyphing.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 12 * dimen.BP}, Services{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		text, _, err := mapper.Itemize(t.Context(), tc.text, nil)
+		text, _, err := mapper.Itemize(tc.text, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -41,7 +41,7 @@ func TestFragmentRealFontsAndOriginalSources(t *testing.T) {
 		for _, width := range []dimen.DU{0, 16 * dimen.BP} {
 			created := 0
 			cfg := khipu.Config{Streaming: &khipu.StreamingConfig{Resolver: mapper, Defaults: defaults, NewShaper: func() (contracts.StreamingShaper, error) { created++; return NewStream(8) }}}
-			r, err := paragraph.Run(t.Context(), paragraph.Input{Text: text, Direction: tc.direction}, paragraph.Params{Constraints: paragraph.Constraints{Width: width}, Breaker: paragraph.FirstFit, Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight}, LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.NormalHeight}}}, cfg)
+			r, err := paragraph.Run(paragraph.Input{Text: text, Direction: tc.direction}, paragraph.Params{Constraints: paragraph.Constraints{Width: width}, Breaker: paragraph.FirstFit, Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight}, LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.NormalHeight}}}, cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -57,11 +57,11 @@ func TestFragmentRealFontsAndOriginalSources(t *testing.T) {
 				texts = append(texts, tx)
 			}
 			before := created
-			f, err := paragraph.Fragment(t.Context(), r.VList)
+			f, err := paragraph.Fragment(r.VList)
 			if err != nil {
 				t.Fatal(err)
 			}
-			left, right, err := paragraph.SplitFragment(t.Context(), f, 1)
+			left, right, err := paragraph.SplitFragment(f, 1)
 			if err != nil {
 				t.Fatal(err)
 			}

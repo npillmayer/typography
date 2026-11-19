@@ -1,5 +1,14 @@
 # CSS line-box VList contract
 
+Context policy (2026-11-19): typesetting, geometry, retained proofs, replay,
+and document execution are synchronous and have no context argument. Contexts
+are confined to streaming coordination and font discovery/loading. Streaming
+callers create a local background context; consumer failure still cancels and
+joins the producer before cleanup. Errors publish no partial result and preserve
+previous immutable output. TUI layout jobs finish serially; stale results are
+discarded, while font work remains cancellable. This supersedes earlier
+cancellation requirements for typesetting in this document.
+
 Implemented: 2026-11-17. CSSLineHeight is the sole paragraph assembly policy.
 ProofCompatibility, DefaultEmSize, Line.Gap and frozen-only Assemble are removed.
 Tytui paragraph callers now supply explicit CSS normal line-height by default;
@@ -121,7 +130,7 @@ local coordinates. Future repacking must specify numerical consistency before
 allowing tolerance at boundaries; acceptance must not create unexplained failures
 on a subsequent valid split.
 
-Failures and cancellation publish no partial result and cannot mutate previous
+Failures publish no partial result and cannot mutate previous
 results. Rendering consumes completed placements without querying line metrics,
 restacking, reshaping, rebreaking or reopening font sources.
 

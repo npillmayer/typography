@@ -18,11 +18,11 @@ func TestUnboxSelectedReplacementWithoutServices(t *testing.T) {
 		calls.hyphenate++
 		return []khipu.HyphenationFragment{{PreBreak: "-"}}, nil
 	})
-	p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString("ab\u00adcd\naa")}, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
+	p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString("ab\u00adcd\naa")}, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := p.Layout(t.Context(), paragraph.LayoutRequest{Params: params(paragraph.FirstFit, 15*dimen.BP)})
+	r, err := p.Layout(paragraph.LayoutRequest{Params: params(paragraph.FirstFit, 15*dimen.BP)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestUnboxMixedSizesAndSpaceMetrics(t *testing.T) {
 	for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
 		params := cssParams(breaker, factor(1.5))
 		params.Constraints.Width = 100 * dimen.BP
-		r, err := paragraph.Run(t.Context(), paragraph.Input{Text: text}, params, cfg)
+		r, err := paragraph.Run(paragraph.Input{Text: text}, params, cfg)
 		if err != nil {
 			t.Fatal(err)
 		}

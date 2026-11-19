@@ -1,7 +1,6 @@
 package paragraph
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"math"
@@ -177,13 +176,10 @@ type metricRun struct {
 
 // Source styles are consulted only for surviving non-text material (spaces).
 // Actual glyphs always use their frozen font and scale, including replacements.
-func sourceMetrics(ctx context.Context, text styled.Text, cfg khipu.Config, excluded []khipu.ByteRange) ([]metricRun, error) {
+func sourceMetrics(text styled.Text, cfg khipu.Config, excluded []khipu.ByteRange) ([]metricRun, error) {
 	var runs []metricRun
 	object := 0
 	for run := range text.StyleRanges() {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		for object < len(excluded) && excluded[object].End <= run.Position {
 			object++
 		}

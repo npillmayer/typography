@@ -1,7 +1,6 @@
 package paragraph_test
 
 import (
-	"context"
 	"errors"
 	"math"
 	"reflect"
@@ -37,11 +36,11 @@ func flowConfig(c *fitServiceCalls) khipu.Config {
 func startFlow(t *testing.T, input paragraph.Input, req paragraph.LayoutRequest) (*paragraph.Prepared, *paragraph.Continuation, *fitServiceCalls) {
 	t.Helper()
 	c := new(fitServiceCalls)
-	p, e := paragraph.Prepare(t.Context(), input, khipu.PrepareOptions{}, flowConfig(c))
+	p, e := paragraph.Prepare(input, khipu.PrepareOptions{}, flowConfig(c))
 	if e != nil {
 		t.Fatal(e)
 	}
-	s, e := p.StartFlow(t.Context(), req)
+	s, e := p.StartFlow(req)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -52,7 +51,7 @@ func frame(w dimen.DU, h float64) paragraph.Frame {
 }
 func fitFlow(t *testing.T, c *paragraph.Continuation, f paragraph.Frame) *paragraph.FlowResult {
 	t.Helper()
-	r, e := c.Fit(t.Context(), f)
+	r, e := c.Fit(f)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -162,11 +161,11 @@ func TestFlowDistinctKPPrefix(t *testing.T) {
 	cfg := flowConfig(c)
 	cfg.Params.SpaceStretchPercent = 50
 	cfg.Params.SpaceShrinkPercent = 33.3
-	p, e := paragraph.Prepare(t.Context(), fitTextInput("aaaa a a aa aa aaaa aa aaa a a aaa"), khipu.PrepareOptions{}, cfg)
+	p, e := paragraph.Prepare(fitTextInput("aaaa a a aa aa aaaa aa aaa a a aaa"), khipu.PrepareOptions{}, cfg)
 	if e != nil {
 		t.Fatal(e)
 	}
-	s, e := p.StartFlow(t.Context(), flowRequest(paragraph.KnuthPlass))
+	s, e := p.StartFlow(flowRequest(paragraph.KnuthPlass))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -249,44 +248,31 @@ func (r flowFailResolver) ResolveStyle(s styled.Style, d contracts.ResolvedRunSt
 	return r.fitCountedResolver.ResolveStyle(s, d)
 }
 
-func TestFlowFailuresCancellationAndLifecycle(t *testing.T) {
+func TestFlowFailuresAndLifecycle(t *testing.T) {
 	c := new(fitServiceCalls)
 	cfg := flowConfig(c)
 	failed := false
 	cause := errors.New("late assembly failure")
 	cfg.Streaming.Resolver = flowFailResolver{fitCountedResolver{c}, &failed, cause}
-	p, e := paragraph.Prepare(t.Context(), fitTextInput("aa bb cc dd ee ff gg hh ii jj kk ll"), khipu.PrepareOptions{}, cfg)
+	p, e := paragraph.Prepare(fitTextInput("aa bb cc dd ee ff gg hh ii jj kk ll"), khipu.PrepareOptions{}, cfg)
 	if e != nil {
 		t.Fatal(e)
 	}
-	s, e := p.StartFlow(t.Context(), flowRequest(paragraph.FirstFit))
+	s, e := p.StartFlow(flowRequest(paragraph.FirstFit))
 	if e != nil {
 		t.Fatal(e)
 	}
 	a := fitFlow(t, s, frame(40, 10))
 	token := a.Continuation
 	original := token.Remainder()
-	for _, w := range []dimen.DU{40, 30} {
-		probe := &fitExpiringContext{Context: t.Context()}
-		if _, e := token.Fit(probe, frame(w, 10)); e != nil {
-			t.Fatal(e)
-		}
-		for at := 1; at <= probe.calls; at++ {
-			ctx := &fitExpiringContext{Context: t.Context(), limit: at}
-			out, e := token.Fit(ctx, frame(w, 10))
-			if out != nil || !errors.Is(e, context.Canceled) {
-				t.Fatal("partial cancellation", at, e)
-			}
-		}
-		sameFragment(t, original, token.Remainder())
-	}
 	failed = true
-	out, e := token.Fit(t.Context(), frame(30, 10))
+	out, e := token.Fit(frame(30, 10))
 	var stage *paragraph.Error
 	if out != nil || !errors.Is(e, cause) || !errors.As(e, &stage) || stage.Stage != paragraph.StageAssemble {
 		t.Fatal("lost late failure", e)
 	}
 	failed = false
+	sameFragment(t, original, token.Remainder())
 	before := c.snapshot()
 	done := fitFlow(t, token, frame(30, 1000))
 	noFlowShaping(t, before, c.snapshot())
@@ -318,7 +304,7 @@ func TestFlowFailuresCancellationAndLifecycle(t *testing.T) {
 func TestFlowInvalidAndEmptyFrames(t *testing.T) {
 	_, s, _ := startFlow(t, fitTextInput("aa bb cc dd ee ff"), flowRequest(paragraph.FirstFit))
 	for _, f := range []paragraph.Frame{{Width: -1}, {Width: dimen.Fil}, {Height: -1}, {Height: math.NaN()}, {Height: math.Inf(1)}, {Height: dimen.Fil.Points()}} {
-		if out, e := s.Fit(t.Context(), f); out != nil || !errors.Is(e, contracts.ErrIllegalArguments) {
+		if out, e := s.Fit(f); out != nil || !errors.Is(e, contracts.ErrIllegalArguments) {
 			t.Fatal(out, e)
 		}
 	}
@@ -326,12 +312,9 @@ func TestFlowInvalidAndEmptyFrames(t *testing.T) {
 		if c.Remainder() != nil {
 			t.Fatal("zero token")
 		}
-		if out, e := c.Fit(t.Context(), frame(40, 10)); out != nil || !errors.Is(e, contracts.ErrIllegalArguments) {
+		if out, e := c.Fit(frame(40, 10)); out != nil || !errors.Is(e, contracts.ErrIllegalArguments) {
 			t.Fatal(out, e)
 		}
-	}
-	if out, e := s.Fit(nil, frame(40, 10)); out != nil || e == nil {
-		t.Fatal(out, e)
 	}
 	no := fitFlow(t, s, frame(30, 0))
 	if no.Status != paragraph.FitNoProgress || no.Continuation == nil {

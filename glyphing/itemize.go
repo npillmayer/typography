@@ -1,7 +1,6 @@
 package glyphing
 
 import (
-	"context"
 	"fmt"
 	"unicode"
 
@@ -43,14 +42,9 @@ func (s runStyle) String() string { return fmt.Sprintf("%s %s %s", s.Script, s.R
 // Soft hyphens inherit the preceding face within the CSS span (the following
 // face at its start). Marker-only spans retain their mapped primary face.
 // Equivalent resolved styles coalesce across paint changes.
-func (r *StyleMapper) Itemize(ctx context.Context, text string, spans []typestyle.Span) (styled.Text, []FontTextRun, error) {
+func (r *StyleMapper) Itemize(text string, spans []typestyle.Span) (styled.Text, []FontTextRun, error) {
 	out := styled.TextFromString(text)
-	if ctx == nil {
-		return out, nil, fmt.Errorf("nil context")
-	}
-	if err := ctx.Err(); err != nil {
-		return out, nil, err
-	}
+
 	if err := typestyle.ValidateSpans(text, spans); err != nil {
 		return out, nil, err
 	}
@@ -67,7 +61,7 @@ func (r *StyleMapper) Itemize(ctx context.Context, text string, spans []typestyl
 	for i, span := range projected {
 		spansForItems[i].TypographySpan = span
 	}
-	return r.itemizeSpans(ctx, text, spansForItems, plain)
+	return r.itemizeSpans(text, spansForItems, plain)
 }
 
 type itemizationSpan struct {
@@ -83,18 +77,15 @@ type textItem struct {
 // itemizeSpans is shared by text-only and mixed input. Mixed input supplies
 // disjoint text intervals, so grapheme and neighbor analysis never crosses an
 // object. Font coverage/fallback is the existing algorithm, not a new preflight.
-func (r *StyleMapper) itemizeSpans(ctx context.Context, text string, spans []itemizationSpan, plain bool) (styled.Text, []FontTextRun, error) {
+func (r *StyleMapper) itemizeSpans(text string, spans []itemizationSpan, plain bool) (styled.Text, []FontTextRun, error) {
 	out := styled.TextFromString(text)
 	boundaries := itemizationBoundaries(text, spans)
 	var items []textItem
 	for _, span := range spans {
-		if err := ctx.Err(); err != nil {
-			return out, nil, err
-		}
 		if !boundaries[int(span.Start)] || !boundaries[int(span.End)] {
 			return out, nil, fmt.Errorf("style boundary splits a grapheme at [%d,%d)", span.Start, span.End)
 		}
-		local, err := r.itemizeSpan(ctx, text, span, plain)
+		local, err := r.itemizeSpan(text, span, plain)
 		if err != nil {
 			return out, nil, err
 		}
@@ -108,7 +99,7 @@ func (r *StyleMapper) itemizeSpans(ctx context.Context, text string, spans []ite
 		}
 	}
 	setFeatureWindows(text, items)
-	return r.applyTextItems(ctx, text, out, items)
+	return r.applyTextItems(text, out, items)
 }
 
 // itemizationBoundaries finds grapheme boundaries across contiguous text spans.
@@ -138,7 +129,7 @@ func itemizationBoundaries(text string, spans []itemizationSpan) map[int]bool {
 
 // itemizeSpan selects whole-grapheme faces before inheriting script and soft-hyphen
 // context within this projected span. Private style/feature domains stay intact.
-func (r *StyleMapper) itemizeSpan(ctx context.Context, text string, span itemizationSpan, plain bool) ([]textItem, error) {
+func (r *StyleMapper) itemizeSpan(text string, span itemizationSpan, plain bool) ([]textItem, error) {
 	var css styled.Style
 	if !plain {
 		css = span.Style
@@ -154,9 +145,6 @@ func (r *StyleMapper) itemizeSpan(ctx context.Context, text string, span itemiza
 	var local []textItem
 	clusters := uniseg.NewGraphemes(text[span.Start:span.End])
 	for clusters.Next() {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		a, b := clusters.Positions()
 		start, end := span.Start+uint64(a), span.Start+uint64(b)
 		chunk := clusters.Str()
@@ -277,12 +265,9 @@ func inheritSoftHyphenFaces(local []textItem, primary string) {
 // applyTextItems styles the coalesced ranges and emits detached font bindings.
 // Feature windows must already be finalized. Preserve the text-only error return
 // behavior; ItemizeInline separately suppresses partial output on every failure.
-func (r *StyleMapper) applyTextItems(ctx context.Context, text string, out styled.Text, items []textItem) (styled.Text, []FontTextRun, error) {
+func (r *StyleMapper) applyTextItems(text string, out styled.Text, items []textItem) (styled.Text, []FontTextRun, error) {
 	var bindings []FontTextRun
 	for _, it := range items {
-		if err := ctx.Err(); err != nil {
-			return styled.TextFromString(text), nil, err
-		}
 		var err error
 		out, err = out.Style(it.style, it.start, it.end)
 		if err != nil {
@@ -295,9 +280,7 @@ func (r *StyleMapper) applyTextItems(ctx context.Context, text string, out style
 		info := r.faces[it.style.ResourceID].Info
 		bindings = append(bindings, FontTextRun{Start: it.start, End: it.end, Path: info.Path, SHA256: info.SHA256, ResourceID: info.ResourceID, Origin: info.Origin, EmSize: resolved.EmSize, Script: it.style.Script})
 	}
-	if err := ctx.Err(); err != nil {
-		return styled.TextFromString(text), nil, err
-	}
+
 	return out, bindings, nil
 }
 func coverageExempt(c rune) bool {

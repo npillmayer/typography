@@ -1,7 +1,6 @@
 package paragraph
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -66,13 +65,7 @@ type FragmentFit struct {
 // ErrIncompatibleFragment. Cancellation preserves its cause. Every failure returns
 // nil and leaves prior results reusable. No working preparation is retained, so
 // completed fragments remain usable after the paragraph's preparation is released.
-func FitFragment(ctx context.Context, f *layout.Fragment, source, target FragmentReuseKey, height float64) (*FragmentFit, error) {
-	if ctx == nil {
-		return nil, fitInvalid("nil context")
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+func FitFragment(f *layout.Fragment, source, target FragmentReuseKey, height float64) (*FragmentFit, error) {
 	if f == nil || f.Frozen() == nil || !validFragmentReuseKey(source) || !fitBounded(height) || height < 0 {
 		return nil, fitInvalid("invalid fragment, source key or height")
 	}
@@ -81,29 +74,23 @@ func FitFragment(ctx context.Context, f *layout.Fragment, source, target Fragmen
 	}
 	// Reject invalid derived input coordinates even if a cut could hide them
 	// inside two individually bounded output boxes.
-	if err := validateFitLocal(ctx, f); err != nil {
+	if err := validateFitLocal(f); err != nil {
 		return nil, err
 	}
 	for i := 0; i < f.Frozen().LineCount(); i++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		line, ok := f.Frozen().Line(i)
 		if !ok || line.TargetWidth != source.Width {
 			return nil, ErrIncompatibleFragment
 		}
 	}
-	return fitRetained(ctx, f, source.Width, height)
+	return fitRetained(f, source.Width, height)
 }
 
 // fitFlowFragment checks a privately retained width history, allowing a frozen
 // owner containing earlier widths while its unplaced tail has one uniform width.
 // No preparation or service handle enters this geometry-only boundary.
-func fitFlowFragment(ctx context.Context, f *layout.Fragment, history []dimen.DU, width dimen.DU, height float64) (*FragmentFit, error) {
+func fitFlowFragment(f *layout.Fragment, history []dimen.DU, width dimen.DU, height float64) (*FragmentFit, error) {
 	for i := 0; i < f.Frozen().LineCount(); i++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		want := width
 		if i < len(history) {
 			want = history[i]
@@ -113,29 +100,26 @@ func fitFlowFragment(ctx context.Context, f *layout.Fragment, history []dimen.DU
 			return nil, ErrIncompatibleFragment
 		}
 	}
-	return fitRetained(ctx, f, width, height)
+	return fitRetained(f, width, height)
 }
 
-func fitRetained(ctx context.Context, f *layout.Fragment, width dimen.DU, height float64) (*FragmentFit, error) {
-	if err := validateFitLocal(ctx, f); err != nil {
+func fitRetained(f *layout.Fragment, width dimen.DU, height float64) (*FragmentFit, error) {
+	if err := validateFitLocal(f); err != nil {
 		return nil, err
 	}
 	out := new(FragmentFit)
 	for _, l := range f.Lines() {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		if l.Horizontal.Width > width {
 			out.Overfull = append(out.Overfull, l.OriginalIndex)
 		}
 	}
 	var err error
-	out.Placed, out.Remainder, err = fitPrefix(ctx, f, height)
+	out.Placed, out.Remainder, err = fitPrefix(f, height)
 	if err != nil {
 		return nil, err
 	}
 	for _, part := range []*layout.Fragment{out.Placed, out.Remainder} {
-		if err := validateFitLocal(ctx, part); err != nil {
+		if err := validateFitLocal(part); err != nil {
 			return nil, err
 		}
 	}
@@ -145,9 +129,7 @@ func fitRetained(ctx context.Context, f *layout.Fragment, width dimen.DU, height
 			out.Status = FitNoProgress
 		}
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+
 	return out, nil
 }
 
@@ -165,13 +147,10 @@ func validFragmentReuseKey(k FragmentReuseKey) bool {
 	return true
 }
 
-func fitPrefix(ctx context.Context, f *layout.Fragment, height float64) (*layout.Fragment, *layout.Fragment, error) {
+func fitPrefix(f *layout.Fragment, height float64) (*layout.Fragment, *layout.Fragment, error) {
 	lines := f.Lines()
 	cut := 0
 	for i, l := range lines {
-		if err := ctx.Err(); err != nil {
-			return nil, nil, err
-		}
 		// Use authoritative ends, not a new sum of rounded heights. A retained
 		// box may be slightly taller under arithmetic-equality tolerance.
 		end := l.Top + l.Height
@@ -188,14 +167,14 @@ func fitPrefix(ctx context.Context, f *layout.Fragment, height float64) (*layout
 	}
 	span := f.Range()
 	if cut == 0 {
-		empty, err := layout.NewFragment(ctx, f.Frozen(), layout.LineRange{Start: span.Start, End: span.Start}, layout.Box{}, nil, nil, nil)
+		empty, err := layout.NewFragment(f.Frozen(), layout.LineRange{Start: span.Start, End: span.Start}, layout.Box{}, nil, nil, nil)
 		return empty, f, err
 	}
 	if cut == len(lines) {
-		empty, err := layout.NewFragment(ctx, f.Frozen(), layout.LineRange{Start: span.End, End: span.End}, layout.Box{}, nil, nil, nil)
+		empty, err := layout.NewFragment(f.Frozen(), layout.LineRange{Start: span.End, End: span.End}, layout.Box{}, nil, nil, nil)
 		return f, empty, err
 	}
-	first, rest, err := SplitFragment(ctx, f, cut)
+	first, rest, err := SplitFragment(f, cut)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -207,24 +186,18 @@ func fitPrefix(ctx context.Context, f *layout.Fragment, height float64) (*layout
 
 // Publication validates placed geometry. Derived local geometry also needs
 // strict domain checks, without tightening arithmetic-equality tolerances.
-func validateFitLocal(ctx context.Context, f *layout.Fragment) error {
+func validateFitLocal(f *layout.Fragment) error {
 	if !fitBounded(f.Box().Depth()) {
 		return fitInvalid("fragment depth outside dimension domain")
 	}
 	lines := f.Lines()
 	for _, l := range lines {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
 		baseline := l.Baseline - l.Top
 		if !fitBounded(baseline) || !fitBounded(l.Height-baseline) {
 			return fitInvalid("local line geometry outside dimension domain")
 		}
 	}
 	for _, a := range f.AtomicPlacements() {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
 		if !fitBounded(a.Y - lines[a.Line].Top) {
 			return fitInvalid("local atomic geometry outside dimension domain")
 		}

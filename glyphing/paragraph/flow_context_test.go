@@ -22,31 +22,17 @@ func TestFlowAdmission(t *testing.T) {
 	for _, mode := range []khipu.HyphenationMode{khipu.ExplicitHyphenation, khipu.AutomaticHyphenation} {
 		cfg := flowConfig(new(fitServiceCalls))
 		cfg.Hyphenator = flowHyphenator{}
-		p, e := paragraph.Prepare(t.Context(), fitTextInput("ab\u00adcd"), khipu.PrepareOptions{Hyphenation: mode}, cfg)
+		p, e := paragraph.Prepare(fitTextInput("ab\u00adcd"), khipu.PrepareOptions{Hyphenation: mode}, cfg)
 		if e != nil {
 			t.Fatal(e)
 		}
-		if s, e := p.StartFlow(t.Context(), flowRequest(paragraph.FirstFit)); s != nil || !errors.Is(e, khipu.ErrUnsupportedPolicy) {
+		if s, e := p.StartFlow(flowRequest(paragraph.FirstFit)); s != nil || !errors.Is(e, khipu.ErrUnsupportedPolicy) {
 			t.Fatal(s, e)
 		}
 	}
 	for _, p := range []*paragraph.Prepared{nil, {}} {
-		if s, e := p.StartFlow(t.Context(), flowRequest(paragraph.FirstFit)); s != nil || !errors.Is(e, contracts.ErrIllegalArguments) {
+		if s, e := p.StartFlow(flowRequest(paragraph.FirstFit)); s != nil || !errors.Is(e, contracts.ErrIllegalArguments) {
 			t.Fatal(s, e)
-		}
-	}
-	p, _, _ := startFlow(t, fitTextInput("aa bb"), flowRequest(paragraph.FirstFit))
-	if s, e := p.StartFlow(nil, flowRequest(paragraph.FirstFit)); s != nil || e == nil {
-		t.Fatal(s, e)
-	}
-	probe := &fitExpiringContext{Context: t.Context()}
-	if _, e := p.StartFlow(probe, flowRequest(paragraph.FirstFit)); e != nil {
-		t.Fatal(e)
-	}
-	for at := 1; at <= probe.calls; at++ {
-		ctx := &fitExpiringContext{Context: t.Context(), limit: at}
-		if s, e := p.StartFlow(ctx, flowRequest(paragraph.FirstFit)); s != nil || !errors.Is(e, context.Canceled) {
-			t.Fatal(at, s, e)
 		}
 	}
 }
@@ -67,11 +53,11 @@ func TestFlowRetainsMarkupFeaturesAndSizes(t *testing.T) {
 		return flowFeatureStream{fitCountedStream{s, c}}, e
 	}
 	input := fitTextInput("aa bb cc dd ee ff gg hh ii jj")
-	p, e := paragraph.Prepare(t.Context(), input, khipu.PrepareOptions{}, cfg)
+	p, e := paragraph.Prepare(input, khipu.PrepareOptions{}, cfg)
 	if e != nil {
 		t.Fatal(e)
 	}
-	s, e := p.StartFlow(t.Context(), flowRequest(paragraph.FirstFit))
+	s, e := p.StartFlow(flowRequest(paragraph.FirstFit))
 	if e != nil {
 		t.Fatal(e)
 	}

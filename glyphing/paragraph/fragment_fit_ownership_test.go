@@ -1,7 +1,6 @@
 package paragraph_test
 
 import (
-	"context"
 	"errors"
 	"math"
 	"reflect"
@@ -15,36 +14,15 @@ import (
 	"github.com/npillmayer/typography/layout"
 )
 
-type fitExpiringContext struct {
-	context.Context
-	calls, limit int
-}
-
-func (c *fitExpiringContext) Err() error {
-	c.calls++
-	if c.limit > 0 && c.calls >= c.limit {
-		return context.Canceled
-	}
-	return c.Context.Err()
-}
-
-func TestFitRetryCancellationAndDetachedOwnership(t *testing.T) {
+func TestFitRetryAndDetachedOwnership(t *testing.T) {
 	v, key, c := fitFixture(t, fitTextInput("aa\naa\naa\naa"), paragraph.FirstFit, 40*dimen.BP, 1, nil)
 	before := v.Lines()
 	materials := v.Materials()
 	box := v.Box()
 	counts := c.snapshot()
-	probe := &fitExpiringContext{Context: t.Context()}
-	first, err := fitSplitEqual(probe, v, key, fitFrame{key, 10}, fitFrame{key, 10})
+	first, err := fitSplitEqual(v, key, fitFrame{key, 10}, fitFrame{key, 10})
 	if err != nil {
 		t.Fatal(err)
-	}
-	for _, at := range []int{1, probe.calls / 2, probe.calls} {
-		ctx := &fitExpiringContext{Context: t.Context(), limit: at}
-		got, err := fitSplitEqual(ctx, v, key, fitFrame{key, 10}, fitFrame{key, 10})
-		if got != nil || !errors.Is(err, context.Canceled) {
-			t.Fatal("partial cancelled result", got, err, at)
-		}
 	}
 	var wg sync.WaitGroup
 	for range 8 {
@@ -52,7 +30,7 @@ func TestFitRetryCancellationAndDetachedOwnership(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for range 10 {
-				out, err := fitSplitEqual(t.Context(), v, key, fitFrame{key, 10}, fitFrame{key, 10})
+				out, err := fitSplitEqual(v, key, fitFrame{key, 10}, fitFrame{key, 10})
 				if err != nil {
 					t.Error(err)
 					return
@@ -79,7 +57,7 @@ func TestFitRetryCancellationAndDetachedOwnership(t *testing.T) {
 func TestFitRetainedContentLifetime(t *testing.T) {
 	out := func() *fitSplitResult {
 		v, key, _ := fitFixture(t, fitTextInput("aa\naa"), paragraph.FirstFit, 40*dimen.BP, 1, nil)
-		out, err := fitSplitEqual(t.Context(), v, key, fitFrame{key, 10}, fitFrame{key, 10})
+		out, err := fitSplitEqual(v, key, fitFrame{key, 10}, fitFrame{key, 10})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -117,11 +95,11 @@ func TestFitLateGeometryFailureAndDepthBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := fitSplitEqual(t.Context(), bad, key, fitFrame{key, 10}, fitFrame{key, 10})
+	out, err := fitSplitEqual(bad, key, fitFrame{key, 10}, fitFrame{key, 10})
 	if out != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 		t.Fatal("published partial geometry", out, err)
 	}
-	if out, err = fitSplitEqual(t.Context(), v, key, fitFrame{key, 10}, fitFrame{key, 10}); err != nil {
+	if out, err = fitSplitEqual(v, key, fitFrame{key, 10}, fitFrame{key, 10}); err != nil {
 		t.Fatal(err)
 	}
 	fitVerifyPartition(t, v, out)
@@ -146,7 +124,7 @@ func TestFitLateGeometryFailureAndDepthBounds(t *testing.T) {
 		if err != nil {
 			t.Fatal("source tolerance changed", err)
 		}
-		out, err := fitSplitEqual(t.Context(), source, key, fitFrame{key, 100}, fitFrame{key, 100})
+		out, err := fitSplitEqual(source, key, fitFrame{key, 100}, fitFrame{key, 100})
 		if offset < 0 {
 			if out != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 				t.Fatal(out, err)

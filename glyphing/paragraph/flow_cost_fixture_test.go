@@ -71,13 +71,13 @@ func p6Input(t testing.TB, backend string, words int, fixed bool) (paragraph.Inp
 	if err != nil {
 		t.Fatal(err) // Missing offline fixtures must never silently skip a sample.
 	}
-	mapper, err := glyphing.NewStyleMapper(t.Context(), glyphing.SelectedFonts{
+	mapper, err := glyphing.NewStyleMapper(glyphing.SelectedFonts{
 		Faces: []glyphing.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 10 * dimen.BP,
 	}, fontot.Services{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, _, err := mapper.Itemize(t.Context(), raw, nil)
+	text, _, err := mapper.Itemize(raw, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func p6Input(t testing.TB, backend string, words int, fixed bool) (paragraph.Inp
 
 func p6Prepare(t testing.TB, input paragraph.Input, config khipu.Config) *paragraph.Prepared {
 	t.Helper()
-	p, err := paragraph.Prepare(t.Context(), input, khipu.PrepareOptions{Hyphenation: khipu.NoHyphenation}, config)
+	p, err := paragraph.Prepare(input, khipu.PrepareOptions{Hyphenation: khipu.NoHyphenation}, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func newP6Fixture(t testing.TB, backend string, words int, fixed bool) *p6Fixtur
 		req.Params.Constraints.Width = 145 * dimen.BP // Exactly ten synthetic "aa" words.
 	}
 	req.Params.LineLayout.Default.Factor = 1.2
-	seed, err := p.StartFlow(t.Context(), req)
+	seed, err := p.StartFlow(req)
 	if err != nil {
 		t.Fatal(err)
 	}

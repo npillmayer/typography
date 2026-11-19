@@ -19,23 +19,23 @@ const lifetimeSource = "aa bb cc dd ee ff gg hh"
 func frozenLifetimeFixture(t *testing.T, mode string) (weak.Pointer[paragraph.Prepared], []*layout.Fragment) {
 	t.Helper()
 	calls := new(fitServiceCalls)
-	p, err := paragraph.Prepare(t.Context(), fitTextInput(lifetimeSource), khipu.PrepareOptions{}, flowConfig(calls))
+	p, err := paragraph.Prepare(fitTextInput(lifetimeSource), khipu.PrepareOptions{}, flowConfig(calls))
 	if err != nil {
 		t.Fatal(err)
 	}
 	req := flowRequest(paragraph.FirstFit)
 	if mode == "ordinary layout" {
-		result, err := p.Layout(t.Context(), req)
+		result, err := p.Layout(req)
 		if err != nil {
 			t.Fatal(err)
 		}
-		fragment, err := paragraph.Fragment(t.Context(), result.VList)
+		fragment, err := paragraph.Fragment(result.VList)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return weak.Make(p), []*layout.Fragment{fragment}
 	}
-	initial, err := p.StartFlow(t.Context(), req)
+	initial, err := p.StartFlow(req)
 	if err != nil {
 		t.Fatal(err)
 	}

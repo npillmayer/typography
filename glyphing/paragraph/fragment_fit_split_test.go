@@ -1,7 +1,6 @@
 package paragraph_test
 
 import (
-	"context"
 	"errors"
 	"math"
 	"reflect"
@@ -39,7 +38,7 @@ func TestFitEqualWidthCuts(t *testing.T) {
 				{"strict boundary", math.Nextafter(10, 0), 30, [3]int{0, 3, 0}, fitComplete},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
-					out, err := fitSplitEqual(t.Context(), v, key, fitFrame{key, tc.a}, fitFrame{key, tc.b})
+					out, err := fitSplitEqual(v, key, fitFrame{key, tc.a}, fitFrame{key, tc.b})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -143,7 +142,7 @@ func TestFitNaturalWrapAndFractionalRebasing(t *testing.T) {
 		if len(lines) < 3 {
 			t.Fatal("fixture must wrap without forced breaks", len(lines))
 		}
-		out, err := fitSplitEqual(t.Context(), v, key, fitFrame{key, lines[0].Height}, fitFrame{key, lines[1].Height})
+		out, err := fitSplitEqual(v, key, fitFrame{key, lines[0].Height}, fitFrame{key, lines[1].Height})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -164,7 +163,7 @@ func TestFitEmptyZeroHeightAndOverflow(t *testing.T) {
 		{"", 1, 40 * dimen.BP, 0}, {"aa\n\naa", 0, 40 * dimen.BP, 3}, {"aa", 1, 0, 1},
 	} {
 		v, key, _ := fitFixture(t, fitTextInput(tc.text), paragraph.FirstFit, tc.width, tc.factor, nil)
-		out, err := fitSplitEqual(t.Context(), v, key, fitFrame{key, 0}, fitFrame{key, 100})
+		out, err := fitSplitEqual(v, key, fitFrame{key, 0}, fitFrame{key, 100})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -203,7 +202,7 @@ func TestFitMixedHeightsAndAtomics(t *testing.T) {
 		if v.Lines()[0].Height != 20 || v.Lines()[1].Height != 32 {
 			t.Fatal("unexpected mixed fixture", v.Lines())
 		}
-		out, err := fitSplitEqual(t.Context(), v, key, fitFrame{key, 20}, fitFrame{key, 100})
+		out, err := fitSplitEqual(v, key, fitFrame{key, 20}, fitFrame{key, 100})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -214,7 +213,7 @@ func TestFitMixedHeightsAndAtomics(t *testing.T) {
 	}
 	// Signed effective descent and preserved blank lines.
 	v, key, _ := fitFixture(t, fitTextInput("aa\n\naa"), paragraph.FirstFit, 40*dimen.BP, .25, nil)
-	out, err := fitSplitEqual(t.Context(), v, key, fitFrame{key, 2.5}, fitFrame{key, 5})
+	out, err := fitSplitEqual(v, key, fitFrame{key, 2.5}, fitFrame{key, 5})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +224,7 @@ func TestFitMixedHeightsAndAtomics(t *testing.T) {
 	// Mixed bidi punctuation and a textual isolate crossing the region cut.
 	input := paragraph.Input{Text: styled.TextFromString("abc \u2067אב 12\nגד\u2069 (xyz)"), Direction: bidi.LeftToRight}
 	v, key, _ = fitFixture(t, input, paragraph.FirstFit, 200*dimen.BP, 1, nil)
-	out, err = fitSplitEqual(t.Context(), v, key, fitFrame{key, 10}, fitFrame{key, 100})
+	out, err = fitSplitEqual(v, key, fitFrame{key, 10}, fitFrame{key, 100})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +238,7 @@ func TestFitGuardAndInvalidRequests(t *testing.T) {
 		other := key
 		change(&other)
 		for _, frames := range [][2]fitFrame{{{other, 10}, {key, 10}}, {{key, 10}, {other, 10}}} {
-			out, err := fitSplitEqual(t.Context(), v, key, frames[0], frames[1])
+			out, err := fitSplitEqual(v, key, frames[0], frames[1])
 			if out != nil || !errors.Is(err, fitErrIncompatible) {
 				t.Fatal("guard", out, err)
 			}
@@ -247,29 +246,19 @@ func TestFitGuardAndInvalidRequests(t *testing.T) {
 	}
 	wrong := key
 	wrong.width++
-	if out, err := fitSplitEqual(t.Context(), v, wrong, fitFrame{wrong, 10}, fitFrame{wrong, 10}); out != nil || !errors.Is(err, fitErrIncompatible) {
+	if out, err := fitSplitEqual(v, wrong, fitFrame{wrong, 10}, fitFrame{wrong, 10}); out != nil || !errors.Is(err, fitErrIncompatible) {
 		t.Fatal("false source width", out, err)
 	}
 	for _, h := range []float64{-1, math.NaN(), math.Inf(1), dimen.Fil.Points()} {
-		out, err := fitSplitEqual(t.Context(), v, key, fitFrame{key, 10}, fitFrame{key, h})
+		out, err := fitSplitEqual(v, key, fitFrame{key, 10}, fitFrame{key, h})
 		if out != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 			t.Fatal(out, err)
 		}
 	}
 	for _, bad := range []*layout.VList{nil, new(layout.VList)} {
-		out, err := fitSplitEqual(t.Context(), bad, key, fitFrame{key, 10}, fitFrame{key, 10})
+		out, err := fitSplitEqual(bad, key, fitFrame{key, 10}, fitFrame{key, 10})
 		if out != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 			t.Fatal(out, err)
 		}
-	}
-	out, err := fitSplitEqual(nil, v, key, fitFrame{key, 10}, fitFrame{key, 10})
-	if out != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
-		t.Fatal(out, err)
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	out, err = fitSplitEqual(ctx, v, key, fitFrame{key, 10}, fitFrame{key, 10})
-	if out != nil || !errors.Is(err, context.Canceled) {
-		t.Fatal(out, err)
 	}
 }

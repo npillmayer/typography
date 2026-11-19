@@ -1,7 +1,6 @@
 package layout_test
 
 import (
-	"context"
 	"errors"
 	"math"
 	"reflect"
@@ -19,14 +18,14 @@ import (
 
 func fixture(t *testing.T) *layout.Fragment {
 	t.Helper()
-	r, err := paragraph.Run(t.Context(), paragraph.Input{Text: styled.TextFromString("aa\naa\naa")}, paragraph.Params{
+	r, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("aa\naa\naa")}, paragraph.Params{
 		Constraints: paragraph.Constraints{Width: 30 * dimen.BP}, Breaker: paragraph.FirstFit,
 		Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight}, LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.NormalHeight}},
 	}, khipu.Config{Streaming: &khipu.StreamingConfig{Resolver: helpers.DefaultStyleResolver{}, Defaults: contracts.ResolvedRunStyle{Font: helpers.NewSyntheticFont(), EmSize: 10 * dimen.BP}, NewShaper: func() (contracts.StreamingShaper, error) { return helpers.NewSyntheticStreamingShaper(8) }}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := paragraph.Fragment(t.Context(), r.VList)
+	f, err := paragraph.Fragment(r.VList)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +36,7 @@ func TestFragmentValidationAndOwnership(t *testing.T) {
 	f := fixture(t)
 	span, box := f.Range(), f.Box()
 	lines, materials, atomics := f.Lines(), f.Materials(), f.AtomicPlacements()
-	copy, err := layout.NewFragment(t.Context(), f.Frozen(), span, box, lines, materials, atomics)
+	copy, err := layout.NewFragment(f.Frozen(), span, box, lines, materials, atomics)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,22 +118,17 @@ func TestFragmentValidationAndOwnership(t *testing.T) {
 		t.Run(mutate.name, func(t *testing.T) {
 			s, b, l, m := span, box, f.Lines(), f.Materials()
 			mutate.fn(&s, &b, l, &m)
-			got, err := layout.NewFragment(t.Context(), f.Frozen(), s, b, l, m, nil)
+			got, err := layout.NewFragment(f.Frozen(), s, b, l, m, nil)
 			if got != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 				t.Fatal(got, err)
 			}
 		})
 	}
 	for _, at := range []int{0, 1, span.End} {
-		empty, err := layout.NewFragment(t.Context(), f.Frozen(), layout.LineRange{Start: at, End: at}, layout.Box{}, nil, nil, nil)
+		empty, err := layout.NewFragment(f.Frozen(), layout.LineRange{Start: at, End: at}, layout.Box{}, nil, nil, nil)
 		if err != nil || empty.Box().HasBaseline || len(empty.Lines()) != 0 {
 			t.Fatal(empty, err)
 		}
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	if got, err := layout.NewFragment(ctx, f.Frozen(), span, box, f.Lines(), f.Materials(), nil); got != nil || !errors.Is(err, context.Canceled) {
-		t.Fatal(got, err)
 	}
 }
 
@@ -146,7 +140,7 @@ func TestCSSPlacementAnchorsAndMaterialKinds(t *testing.T) {
 	for _, delta := range []float64{-5e-10, 5e-10} {
 		lines, materials := f.Lines(), f.Materials()
 		materials[1].Top += delta
-		if got, err := layout.NewFragment(t.Context(), f.Frozen(), f.Range(), f.Box(), lines, materials, nil); got != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
+		if got, err := layout.NewFragment(f.Frozen(), f.Range(), f.Box(), lines, materials, nil); got != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 			t.Fatal("accepted independently rounded fragment anchor", got, err)
 		}
 		whole := make([]layout.Line, len(lines))
@@ -159,14 +153,14 @@ func TestCSSPlacementAnchorsAndMaterialKinds(t *testing.T) {
 	}
 	materials := f.Materials()
 	materials[1].Kind, materials[1].Child = layout.Kern, -1
-	if got, err := layout.NewFragment(t.Context(), f.Frozen(), f.Range(), f.Box(), f.Lines(), materials, nil); got != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
+	if got, err := layout.NewFragment(f.Frozen(), f.Range(), f.Box(), f.Lines(), materials, nil); got != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 		t.Fatal("accepted non-line material", got, err)
 	}
-	left, _, err := paragraph.SplitFragment(t.Context(), f, 2)
+	left, _, err := paragraph.SplitFragment(f, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, b, err := paragraph.SplitFragment(t.Context(), left, 1)
+	a, b, err := paragraph.SplitFragment(left, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

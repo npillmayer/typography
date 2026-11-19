@@ -1,7 +1,6 @@
 package paragraph
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -63,7 +62,7 @@ type Params struct {
 type Stage string
 
 const (
-	// StageInput identifies input/parameter validation and entry cancellation.
+	// StageInput identifies input/parameter validation.
 	StageInput Stage = "input"
 	// StageParagraph identifies bidi paragraph construction.
 	StageParagraph Stage = "paragraph"
@@ -126,17 +125,11 @@ type Result struct {
 //
 // Services/styles must obey their immutable-lifetime contracts and remain usable
 // for retained results. Run does not acquire fonts or rendering services. Errors
-// return nil results and preserve cancellation/backend causes. Cancellation is
-// checked at stage boundaries and within encoding/freezing/assembly; synchronous
-// bidi preparation and breaking cannot be interrupted mid-call.
-func Run(ctx context.Context, input Input, params Params, config khipu.Config) (*Result, error) {
+// return nil results and preserve backend causes. Execution is synchronous;
+// streaming coordination cancels and joins producers internally on failure.
+func Run(input Input, params Params, config khipu.Config) (*Result, error) {
 	fail := func(stage Stage, err error) (*Result, error) { return nil, &Error{stage, err} }
-	if ctx == nil {
-		return fail(StageInput, fmt.Errorf("%w: nil context", ErrInvalidInput))
-	}
-	if err := ctx.Err(); err != nil {
-		return fail(StageInput, err)
-	}
+
 	if len(input.Atomics) != 0 || (input.Direction != bidi.LeftToRight && input.Direction != bidi.RightToLeft) {
 		return fail(StageInput, invalidInput("Run requires text-only input and a valid direction"))
 	}
@@ -155,31 +148,27 @@ func Run(ctx context.Context, input Input, params Params, config khipu.Config) (
 	for run := range para.BidiLevels().LogicalSegments() {
 		runs = append(runs, run)
 	}
-	if err := ctx.Err(); err != nil {
-		return fail(StageParagraph, err)
-	}
+
 	owner := khipu.NewKhipukamayuq(config)
-	encoded, err := owner.EncodeParagraph(ctx, para)
+	encoded, err := owner.EncodeParagraph(para)
 	if err != nil {
 		return fail(StageEncode, err)
 	}
-	return finishLayout(ctx, owner, encoded, params, layoutGeometry(params, nil), text, config, runs, nil)
+	return finishLayout(owner, encoded, params, layoutGeometry(params, nil), text, config, runs, nil)
 }
 
 // finishLayout owns fresh bound material and publishes only a complete result.
-func finishLayout(ctx context.Context, owner *khipu.Khipukamayuq, encoded *khipu.Khipu, params Params, geometry khipu.Params, text styled.Text, config khipu.Config, runs []bidi.Segment, atomics map[contracts.AtomicID]AtomicBox) (*Result, error) {
-	breaks, err := breakLayout(ctx, owner, encoded, params, geometry)
+func finishLayout(owner *khipu.Khipukamayuq, encoded *khipu.Khipu, params Params, geometry khipu.Params, text styled.Text, config khipu.Config, runs []bidi.Segment, atomics map[contracts.AtomicID]AtomicBox) (*Result, error) {
+	breaks, err := breakLayout(owner, encoded, params, geometry)
 	if err != nil {
 		return nil, err
 	}
-	return finishWithBreaks(ctx, owner, encoded, params, geometry, text, config, runs, atomics, breaks)
+	return finishWithBreaks(owner, encoded, params, geometry, text, config, runs, atomics, breaks)
 }
 
-func breakLayout(ctx context.Context, owner *khipu.Khipukamayuq, encoded *khipu.Khipu, params Params, geometry khipu.Params) ([]int, error) {
+func breakLayout(owner *khipu.Khipukamayuq, encoded *khipu.Khipu, params Params, geometry khipu.Params) ([]int, error) {
 	fail := func(stage Stage, err error) ([]int, error) { return nil, &Error{stage, err} }
-	if err := ctx.Err(); err != nil {
-		return fail(StageBreak, err)
-	}
+
 	var err error
 	var breaks []int
 	switch params.Breaker {
@@ -195,32 +184,26 @@ func breakLayout(ctx context.Context, owner *khipu.Khipukamayuq, encoded *khipu.
 	if err != nil {
 		return fail(StageBreak, err)
 	}
-	if err := ctx.Err(); err != nil {
-		return fail(StageBreak, err)
-	}
+
 	return breaks, nil
 }
 
 // finishWithBreaks is shared by ordinary layout and checkpoint continuation.
-func finishWithBreaks(ctx context.Context, owner *khipu.Khipukamayuq, encoded *khipu.Khipu, params Params, geometry khipu.Params, text styled.Text, config khipu.Config, runs []bidi.Segment, atomics map[contracts.AtomicID]AtomicBox, breaks []int) (*Result, error) {
+func finishWithBreaks(owner *khipu.Khipukamayuq, encoded *khipu.Khipu, params Params, geometry khipu.Params, text styled.Text, config khipu.Config, runs []bidi.Segment, atomics map[contracts.AtomicID]AtomicBox, breaks []int) (*Result, error) {
 	fail := func(stage Stage, err error) (*Result, error) { return nil, &Error{stage, err} }
-	if err := ctx.Err(); err != nil {
-		return fail(StageBreak, err)
-	}
+
 	positions, err := encoded.BreakpointPositions(breaks)
 	if err != nil {
 		return fail(StageBreak, err)
 	}
-	frozen, err := owner.Freeze(ctx, encoded, breaks, geometry)
+	frozen, err := owner.Freeze(encoded, breaks, geometry)
 	if err != nil {
 		return fail(StageFreeze, err)
 	}
-	if err := ctx.Err(); err != nil {
-		return fail(StageFreeze, err)
-	}
-	vlist, err := assembleLineHeight(ctx, frozen, params.LineLayout, text, config, atomics)
+
+	vlist, err := assembleLineHeight(frozen, params.LineLayout, text, config, atomics)
 	if err == nil {
-		err = placeAtomics(ctx, vlist, atomics)
+		err = placeAtomics(vlist, atomics)
 	}
 	if err != nil {
 		return fail(StageAssemble, err)
@@ -229,9 +212,7 @@ func finishWithBreaks(ctx context.Context, owner *khipu.Khipukamayuq, encoded *k
 	if err != nil {
 		return fail(StageAssemble, err)
 	}
-	if err := ctx.Err(); err != nil {
-		return fail(StageAssemble, err)
-	}
+
 	return &Result{Frozen: frozen, VList: published, BreakPositions: positions, BidiRuns: slices.Clone(runs), EncodedKnots: len(encoded.Kind), BreakCount: len(breaks)}, nil
 }
 

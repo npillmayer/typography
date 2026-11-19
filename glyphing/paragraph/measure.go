@@ -1,8 +1,6 @@
 package paragraph
 
 import (
-	"context"
-
 	"github.com/npillmayer/khipu"
 )
 
@@ -22,21 +20,14 @@ import (
 // memoized; failures are retryable. Base text is never reshaped, vertical metrics
 // are not queried, and previously returned layout results remain unchanged.
 //
-// Invalid handles, nil contexts and cancellation present at entry use StageInput.
-// Evaluation failures (including request validation, unsupported policy and later
-// cancellation) use StageMeasure. Errors preserve their causes, return zero
+// Invalid handles use StageInput. Evaluation failures (including request
+// validation and unsupported policy) use StageMeasure. Errors preserve their causes, return zero
 // widths and leave the preparation reusable.
-func (p *Prepared) MeasureIntrinsic(ctx context.Context, request khipu.MeasureRequest) (khipu.IntrinsicWidths, error) {
-	if ctx == nil {
-		return khipu.IntrinsicWidths{}, &Error{StageInput, invalidInput("nil context")}
-	}
-	if err := ctx.Err(); err != nil {
-		return khipu.IntrinsicWidths{}, &Error{StageInput, err}
-	}
+func (p *Prepared) MeasureIntrinsic(request khipu.MeasureRequest) (khipu.IntrinsicWidths, error) {
 	if p == nil || p.owner == nil || p.content == nil {
 		return khipu.IntrinsicWidths{}, &Error{StageInput, invalidInput("nil or uninitialized preparation")}
 	}
-	widths, err := p.owner.MeasureIntrinsic(ctx, p.content, request)
+	widths, err := p.owner.MeasureIntrinsic(p.content, request)
 	if err != nil {
 		return khipu.IntrinsicWidths{}, &Error{StageMeasure, err}
 	}

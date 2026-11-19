@@ -2,7 +2,6 @@
 package layout
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"slices"
@@ -83,7 +82,7 @@ func NewVList(frozen *khipu.FrozenKhipu, box Box, lines []Line, materials []Mate
 	for i, line := range lines {
 		local[i] = FragmentLine{Line: line, OriginalIndex: i}
 	}
-	if _, err := NewFragment(context.Background(), frozen, LineRange{End: len(lines)}, box, local, materials, atomics); err != nil {
+	if _, err := NewFragment(frozen, LineRange{End: len(lines)}, box, local, materials, atomics); err != nil {
 		return nil, err
 	}
 	return &VList{box: box, lines: slices.Clone(lines), material: slices.Clone(materials), frozen: frozen, atomics: slices.Clone(atomics)}, nil

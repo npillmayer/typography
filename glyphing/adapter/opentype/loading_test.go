@@ -49,11 +49,11 @@ func TestInjectedLoadingAndCoverageServices(t *testing.T) {
 	if _, err = s.Load(context.Background(), "", nil); err == nil {
 		t.Fatal("missing source")
 	}
-	r, err := glyphing.NewStyleMapper(context.Background(), glyphing.SelectedFonts{Faces: []glyphing.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 12 * dimen.BP}, s)
+	r, err := glyphing.NewStyleMapper(glyphing.SelectedFonts{Faces: []glyphing.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 12 * dimen.BP}, s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, bindings, err := r.Itemize(context.Background(), "fi", nil)
+	_, bindings, err := r.Itemize("fi", nil)
 	if err != nil || len(bindings) != 1 || bindings[0].ResourceID != entry.Info.ResourceID {
 		t.Fatal("direct resolver composition", err)
 	}

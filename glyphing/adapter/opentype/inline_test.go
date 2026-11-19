@@ -21,7 +21,7 @@ func TestItemizeInlineFeatureLigatureAndSourceCoordinates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := glyphing.NewStyleMapper(t.Context(), glyphing.SelectedFonts{Faces: []glyphing.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 12 * dimen.BP}, Services{})
+	r, err := glyphing.NewStyleMapper(glyphing.SelectedFonts{Faces: []glyphing.FaceEntry{entry}, Default: entry.Info.ResourceID, Size: 12 * dimen.BP}, Services{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestItemizeInlineFeatureLigatureAndSourceCoordinates(t *testing.T) {
 		if explicit {
 			spans = []style.Span{{Start: 0, End: 7, Style: style.Style{EmSize: defaults.EmSize, Language: "en"}}}
 		}
-		text, _, err := r.ItemizeInline(t.Context(), "fi\uFFFCfi", spans, anchors)
+		text, _, err := r.ItemizeInline("fi\uFFFCfi", spans, anchors)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -45,12 +45,12 @@ func TestItemizeInlineFeatureLigatureAndSourceCoordinates(t *testing.T) {
 			t.Fatal(err)
 		}
 		owner := khipu.NewKhipukamayuq(khipu.Config{Streaming: &khipu.StreamingConfig{Resolver: r, Defaults: defaults, NewShaper: func() (contracts.StreamingShaper, error) { return NewStream(8) }}})
-		prepared, err := owner.PrepareParagraph(t.Context(), khipu.ParagraphInput{Paragraph: para, Atomics: anchors}, khipu.PrepareOptions{})
+		prepared, err := owner.PrepareParagraph(khipu.ParagraphInput{Paragraph: para, Atomics: anchors}, khipu.PrepareOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, engine := range []string{"firstfit", "knuthplass"} {
-			knots, err := owner.BindParagraph(t.Context(), prepared, []khipu.AtomicAdvance{{ID: 13, Advance: 4 * dimen.BP}})
+			knots, err := owner.BindParagraph(prepared, []khipu.AtomicAdvance{{ID: 13, Advance: 4 * dimen.BP}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -64,7 +64,7 @@ func TestItemizeInlineFeatureLigatureAndSourceCoordinates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			frozen, err := owner.Freeze(t.Context(), knots, breaks, layout)
+			frozen, err := owner.Freeze(knots, breaks, layout)
 			if err != nil {
 				t.Fatal(err)
 			}

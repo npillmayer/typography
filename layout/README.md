@@ -1,5 +1,14 @@
 # layout
 
+Context policy (2026-11-19): typesetting, geometry, retained proofs, replay,
+and document execution are synchronous and have no context argument. Contexts
+are confined to streaming coordination and font discovery/loading. Streaming
+callers create a local background context; consumer failure still cancels and
+joins the producer before cleanup. Errors publish no partial result and preserve
+previous immutable output. TUI layout jobs finish serially; stale results are
+discarded, while font work remains cancellable. This supersedes earlier
+cancellation requirements for typesetting in this document.
+
 Immutable paragraph geometry and reusable vertical items, with no layout or
 rendering algorithms.
 
@@ -49,7 +58,7 @@ These existing APIs describe positioned views, not unboxed vertical items.
 They remain distinct from ElasticVList, whose items have local origins.
 
 `Fragment` is a separate immutable placement result sharing the entire frozen
-paragraph. `NewFragment(ctx, frozen, range, box, lines, materials, atomics)`
+paragraph. `NewFragment(frozen, range, box, lines, materials, atomics)`
 validates a contiguous original line range and copies all geometry slices.
 `FragmentLine.Index` is local; `OriginalIndex` identifies the frozen line.
 Material children and atomic line indexes are local; knot/source indexes are not

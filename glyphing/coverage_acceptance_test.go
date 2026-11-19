@@ -1,7 +1,6 @@
 package glyphing_test
 
 import (
-	"context"
 	"errors"
 	"reflect"
 	"strings"
@@ -12,15 +11,13 @@ import (
 )
 
 func TestSelectedCoverageAcceptanceOrderAndFailure(t *testing.T) {
-	for _, mode := range []string{"success", "reject unused rule", "cancel check", "structural error"} {
+	for _, mode := range []string{"success", "reject unused rule", "structural error"} {
 		t.Run(mode, func(t *testing.T) {
 			fonts := selectedFixture(t)
 			fonts.Faces[0], fonts.Faces[2] = fonts.Faces[2], fonts.Faces[0]
 			if mode == "structural error" {
 				fonts.Fallbacks = append(fonts.Fallbacks, "unknown")
 			}
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
 			var names []string
 			coverage := glyphing.CoverageFuncs{
 				Check: func(face contracts.FontFace) error {
@@ -29,9 +26,6 @@ func TestSelectedCoverageAcceptanceOrderAndFailure(t *testing.T) {
 					if mode == "reject unused rule" && f.name == "rule" {
 						return contracts.ErrUnsupportedFontFace
 					}
-					if mode == "cancel check" {
-						cancel()
-					}
 					return nil
 				},
 				Lookup: func(contracts.FontFace, rune) (uint32, error) {
@@ -39,7 +33,7 @@ func TestSelectedCoverageAcceptanceOrderAndFailure(t *testing.T) {
 					return 0, nil
 				},
 			}
-			got, err := glyphing.NewStyleMapper(ctx, fonts, coverage)
+			got, err := glyphing.NewStyleMapper(fonts, coverage)
 			switch mode {
 			case "success":
 				if err != nil || got == nil || !reflect.DeepEqual(names, []string{"primary", "rule", "fallback"}) || len(got.Snapshot().Fallbacks) != 2 {
@@ -47,10 +41,6 @@ func TestSelectedCoverageAcceptanceOrderAndFailure(t *testing.T) {
 				}
 			case "reject unused rule":
 				if got != nil || !errors.Is(err, contracts.ErrUnsupportedFontFace) || !strings.Contains(err.Error(), fonts.Rules[0].ResourceID) || !reflect.DeepEqual(names, []string{"primary", "rule"}) {
-					t.Fatal(got, err, names)
-				}
-			case "cancel check":
-				if got != nil || !errors.Is(err, context.Canceled) || len(names) != 1 {
 					t.Fatal(got, err, names)
 				}
 			case "structural error":

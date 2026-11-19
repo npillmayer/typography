@@ -1,8 +1,6 @@
 package paragraph
 
 import (
-	"context"
-
 	"github.com/npillmayer/khipu/dimen"
 	"github.com/npillmayer/khipu/linebreak/firstfit"
 )
@@ -21,40 +19,40 @@ func (w continuationWidths) LineLength(line int32) dimen.DU {
 	return w.tail
 }
 
-func (c *Continuation) reflow(ctx context.Context, width dimen.DU) (*Continuation, error) {
+func (c *Continuation) reflow(width dimen.DU) (*Continuation, error) {
 	s := c.state
 	p := s.prepared
-	checkpoint, err := p.owner.Checkpoint(ctx, p.content, c.path, len(c.history))
+	checkpoint, err := p.owner.Checkpoint(p.content, c.path, len(c.history))
 	if err != nil {
 		return nil, &Error{StageBreak, err}
 	}
-	bound, err := p.owner.BindParagraph(ctx, p.content, s.advances)
+	bound, err := p.owner.BindParagraph(p.content, s.advances)
 	if err != nil {
 		return nil, &Error{StageBind, err}
 	}
 	geometry := s.geometry
 	geometry.LineShape = continuationWidths{c.history, width}
-	path, err := firstfit.ContinueParagraph(ctx, bound, geometry, checkpoint)
+	path, err := firstfit.ContinueParagraph(bound, geometry, checkpoint)
 	if err != nil {
 		return nil, &Error{StageBreak, err}
 	}
 	params := s.params
 	params.Constraints.Width = width
 	params.Breaker = FirstFit
-	result, err := finishWithBreaks(ctx, p.owner, bound, params, geometry, p.text, p.config, p.runs, s.boxes, path)
+	result, err := finishWithBreaks(p.owner, bound, params, geometry, p.text, p.config, p.runs, s.boxes, path)
 	if err != nil {
 		return nil, err
 	}
-	whole, err := Fragment(ctx, result.VList)
+	whole, err := Fragment(result.VList)
 	if err != nil {
 		return nil, &Error{StageAssemble, err}
 	}
-	if err = validateFitLocal(ctx, whole); err != nil {
+	if err = validateFitLocal(whole); err != nil {
 		return nil, &Error{StageAssemble, err}
 	}
 	tail := whole
 	if len(c.history) > 0 {
-		_, tail, err = SplitFragment(ctx, whole, len(c.history))
+		_, tail, err = SplitFragment(whole, len(c.history))
 		if err != nil {
 			return nil, &Error{StageAssemble, err}
 		}

@@ -98,11 +98,11 @@ func fitFixture(t *testing.T, input paragraph.Input, breaker paragraph.Breaker, 
 			return fitCountedStream{s, c}, e
 		},
 	}}
-	p, err := paragraph.Prepare(t.Context(), input, khipu.PrepareOptions{Hyphenation: khipu.NoHyphenation}, cfg)
+	p, err := paragraph.Prepare(input, khipu.PrepareOptions{Hyphenation: khipu.NoHyphenation}, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := p.Layout(t.Context(), paragraph.LayoutRequest{Params: paragraph.Params{
+	r, err := p.Layout(paragraph.LayoutRequest{Params: paragraph.Params{
 		Constraints: paragraph.Constraints{Width: width}, Breaker: breaker, Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight},
 		LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.FactorHeight, Factor: factor}},
 	}, Horizontal: &paragraph.HorizontalLayout{}, Atomics: boxes})

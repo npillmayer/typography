@@ -41,7 +41,7 @@ func TestItemizeCoverageOrderAndErrors(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, bindings, err := r.Itemize(t.Context(), tc.text, nil)
+			out, bindings, err := r.Itemize(tc.text, nil)
 			if !reflect.DeepEqual(queries, tc.queries) {
 				t.Fatalf("coverage queries = %v, want %v", queries, tc.queries)
 			}

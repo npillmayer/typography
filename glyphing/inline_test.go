@@ -32,7 +32,7 @@ func TestItemizeInlineObjectOnlyBypassesResolutionAndCoverage(t *testing.T) {
 	text := "\uFFFC\uFFFC"
 	spans := []style.Span{{Start: 0, End: 6, Style: s}}
 	anchors := []contracts.AtomicAnchor{{ID: 9}, {ID: 2, ByteOffset: 3}}
-	got, bindings, err := r.ItemizeInline(t.Context(), text, spans, anchors)
+	got, bindings, err := r.ItemizeInline(text, spans, anchors)
 	if err != nil || len(bindings) != 0 || got.Raw().String() != text {
 		t.Fatal(got, bindings, err)
 	}
@@ -44,7 +44,6 @@ func TestItemizeInlineObjectOnlyBypassesResolutionAndCoverage(t *testing.T) {
 	if spans[0].Style != s || anchors[0].ID != 9 {
 		t.Fatal("caller inputs mutated")
 	}
-
 }
 
 func TestItemizeInlineMarkerBarriers(t *testing.T) {
@@ -70,7 +69,7 @@ func TestItemizeInlineMarkerBarriers(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, b, err := r.ItemizeInline(t.Context(), tc.text, nil, []contracts.AtomicAnchor{{ID: 1, ByteOffset: tc.offset}})
+			out, b, err := r.ItemizeInline(tc.text, nil, []contracts.AtomicAnchor{{ID: 1, ByteOffset: tc.offset}})
 			if err != nil || len(b) != len(tc.ranges) {
 				t.Fatal(b, err)
 			}
@@ -106,7 +105,7 @@ func TestItemizeInlinePaintAndLiteralMarker(t *testing.T) {
 	text := "fi\uFFFCfi"
 	spans := []style.Span{{Start: 0, End: 1, Style: a}, {Start: 1, End: 2, Style: b}, {Start: 2, End: 5, Style: object}, {Start: 5, End: 6, Style: a}, {Start: 6, End: 7, Style: b}}
 
-	_, bindings, err := r.ItemizeInline(t.Context(), text, spans, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 2}})
+	_, bindings, err := r.ItemizeInline(text, spans, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 2}})
 	want := 2
 
 	if err != nil || len(bindings) != want {
@@ -115,65 +114,53 @@ func TestItemizeInlinePaintAndLiteralMarker(t *testing.T) {
 
 	// Literal U+FFFC still follows the existing text itemizer. Only the first
 	// occurrence is attached; it must not exempt the second from that path.
-	_, _, err = r.ItemizeInline(t.Context(), "\uFFFC\uFFFC", nil, []contracts.AtomicAnchor{{ID: 1}})
+	_, _, err = r.ItemizeInline("\uFFFC\uFFFC", nil, []contracts.AtomicAnchor{{ID: 1}})
 	if err == nil || !strings.Contains(err.Error(), "missing glyph") {
 		t.Fatal(err)
 	}
 	f.entries["primary"].Face.(*fakeFace).chars += "\uFFFC"
-	_, bindings, err = r.ItemizeInline(t.Context(), "\uFFFC\uFFFC", nil, []contracts.AtomicAnchor{{ID: 1}})
+	_, bindings, err = r.ItemizeInline("\uFFFC\uFFFC", nil, []contracts.AtomicAnchor{{ID: 1}})
 	if err != nil || len(bindings) != 1 || bindings[0].Start != 3 || bindings[0].End != 6 {
 		t.Fatal(bindings, err)
 	}
 }
 
-func TestItemizeInlineValidationAndCancellation(t *testing.T) {
+func TestItemizeInlineValidationAndCoverageFailure(t *testing.T) {
 	f := newServices()
 	r := load(t, f, fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP})
 	for _, anchors := range [][]contracts.AtomicAnchor{
 		{{ID: 0, ByteOffset: 2}}, {{ID: 1, ByteOffset: 2}, {ID: 1, ByteOffset: 5}}, {{ID: 1, ByteOffset: 5}, {ID: 2, ByteOffset: 2}},
 		{{ID: 1, ByteOffset: 2}, {ID: 2, ByteOffset: 2}}, {{ID: 1, ByteOffset: 0}}, {{ID: 1, ByteOffset: 1}}, {{ID: 1, ByteOffset: 3}}, {{ID: 1, ByteOffset: 8}}, {{ID: 1, ByteOffset: ^uint64(0)}},
 	} {
-		out, b, err := r.ItemizeInline(t.Context(), "é\uFFFC\uFFFC", nil, anchors)
+		out, b, err := r.ItemizeInline("é\uFFFC\uFFFC", nil, anchors)
 		if !errors.Is(err, contracts.ErrIllegalArguments) || b != nil {
 			t.Fatal(anchors, out, b, err)
 		}
 	}
 	anchors := []contracts.AtomicAnchor{{ID: 1}}
 	for _, text := range []string{"\xff\uFFFC", "界"} {
-		if _, _, err := r.ItemizeInline(t.Context(), text, nil, anchors); !errors.Is(err, contracts.ErrIllegalArguments) {
+		if _, _, err := r.ItemizeInline(text, nil, anchors); !errors.Is(err, contracts.ErrIllegalArguments) {
 			t.Fatal(err)
 		}
-	}
-	if _, _, err := r.ItemizeInline(nil, "\uFFFC", nil, anchors); !errors.Is(err, contracts.ErrIllegalArguments) {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	if _, _, err := r.ItemizeInline(ctx, "\uFFFC", nil, nil); !errors.Is(err, context.Canceled) {
-		t.Fatal(err)
-	}
-	if _, _, err := r.ItemizeInline(ctx, "\uFFFC", nil, anchors); !errors.Is(err, context.Canceled) {
-		t.Fatal(err)
 	}
 	// A genuine style boundary inside a text grapheme is still invalid even
 	// when some other part of the paragraph contains an attached object.
 	a, b := documentStyle(), documentStyle()
 	b.EmSize *= 2
 	spans := []style.Span{{Start: 0, End: 1, Style: a}, {Start: 1, End: 6, Style: b}}
-	if _, _, err := r.ItemizeInline(t.Context(), "a\u0301\uFFFC", spans, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 3}}); err == nil || !strings.Contains(err.Error(), "grapheme") {
+	if _, _, err := r.ItemizeInline("a\u0301\uFFFC", spans, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 3}}); err == nil || !strings.Contains(err.Error(), "grapheme") {
 		t.Fatal(err)
 	}
-	// Cancellation triggered by the last coverage query must publish nothing.
-	ctx, cancel = context.WithCancel(t.Context())
-	defer cancel()
+	// A failure in the last coverage query must publish nothing.
+	failure := errors.New("coverage failed")
 	svc := f.services()
-	svc.Coverage = glyphing.CoverageFuncs{Check: newServices().CheckFace, Lookup: func(face contracts.FontFace, c rune) (uint32, error) { cancel(); return f.GlyphIndex(face, c) }}
+	svc.Coverage = glyphing.CoverageFuncs{Check: newServices().CheckFace, Lookup: func(face contracts.FontFace, c rune) (uint32, error) { return 0, failure }}
 	r, err := loadResolver(t.Context(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP}, svc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, bindings, err := r.ItemizeInline(ctx, "\uFFFCa", nil, anchors)
-	if !errors.Is(err, context.Canceled) || bindings != nil {
+	out, bindings, err := r.ItemizeInline("\uFFFCa", nil, anchors)
+	if !errors.Is(err, failure) || bindings != nil {
 		t.Fatal(bindings, err)
 	}
 	for run := range out.StyleRanges() {
@@ -196,7 +183,7 @@ func TestItemizeInlineFeatureDomains(t *testing.T) {
 
 	spans := []style.Span{{Start: 0, End: uint64(len(text)), Style: documentStyle()}}
 	anchors := []contracts.AtomicAnchor{{ID: 7, ByteOffset: 3}}
-	out, bindings, err := r.ItemizeInline(t.Context(), text, spans, anchors)
+	out, bindings, err := r.ItemizeInline(text, spans, anchors)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +229,6 @@ func TestItemizeInlineFeatureDomains(t *testing.T) {
 	if _, err := r.ResolveStyle(s, defaults); !errors.Is(err, contracts.ErrIllegalArguments) {
 		t.Fatal(err)
 	}
-
 }
 
 func TestItemizeInlineNonzeroFeatureOrigin(t *testing.T) {
@@ -250,7 +236,7 @@ func TestItemizeInlineNonzeroFeatureOrigin(t *testing.T) {
 	a, b := documentStyle(), documentStyle()
 	b.EmSize *= 2
 	text := "xxfi\uFFFCfi"
-	out, bindings, err := r.ItemizeInline(t.Context(), text, []style.Span{{Start: 0, End: 2, Style: a}, {Start: 2, End: 9, Style: b}}, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 4}})
+	out, bindings, err := r.ItemizeInline(text, []style.Span{{Start: 0, End: 2, Style: a}, {Start: 2, End: 9, Style: b}}, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 4}})
 	if err != nil || len(bindings) != 3 {
 		t.Fatal(bindings, err)
 	}
@@ -283,7 +269,7 @@ func TestItemizeInlinePaintFeatureDomains(t *testing.T) {
 	defaults := r.Defaults()
 	defaults.Features = []contracts.ShapeFeature{{Start: 3, End: 5, Enabled: true}}
 
-	out, _, err := r.ItemizeInline(t.Context(), "fi\uFFFCfi", spans, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 2}})
+	out, _, err := r.ItemizeInline("fi\uFFFCfi", spans, []contracts.AtomicAnchor{{ID: 1, ByteOffset: 2}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,18 +282,16 @@ func TestItemizeInlinePaintFeatureDomains(t *testing.T) {
 	if len(resolved.Features) != 1 || resolved.Features[0].Start != 0 || resolved.Features[0].End != 2 {
 		t.Fatal("coalesced domain lost", resolved.Features)
 	}
-
 }
 
 func TestItemizeInlineTextOnlyCompatibility(t *testing.T) {
 	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}})
 	for _, text := range []string{"", "fié\u00adאב"} {
-
-		want, wb, err := r.Itemize(t.Context(), text, nil)
+		want, wb, err := r.Itemize(text, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, gb, err := r.ItemizeInline(t.Context(), text, nil, nil)
+		got, gb, err := r.ItemizeInline(text, nil, nil)
 		if err != nil || got.Raw().String() != want.Raw().String() || !reflect.DeepEqual(gb, wb) {
 			t.Fatal(gb, wb, err)
 		}
@@ -318,7 +302,6 @@ func TestItemizeInlineTextOnlyCompatibility(t *testing.T) {
 				t.Fatal("text-only style identity changed")
 			}
 		}
-
 	}
 }
 
@@ -358,7 +341,7 @@ func TestItemizeInlineKhipuCoordinatesAndFreeze(t *testing.T) {
 	r := load(t, newServices(), fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback"}})
 	text := "éa\uFFFCfiאב"
 	anchors := []contracts.AtomicAnchor{{ID: 7, ByteOffset: 3}}
-	out, _, err := r.ItemizeInline(t.Context(), text, nil, anchors)
+	out, _, err := r.ItemizeInline(text, nil, anchors)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +357,7 @@ func TestItemizeInlineKhipuCoordinatesAndFreeze(t *testing.T) {
 		stream = &inlineRecordingStream{StreamingShaper: s}
 		return stream, err
 	}}})
-	p, err := owner.PrepareParagraph(t.Context(), khipu.ParagraphInput{Paragraph: para, Atomics: anchors}, khipu.PrepareOptions{})
+	p, err := owner.PrepareParagraph(khipu.ParagraphInput{Paragraph: para, Atomics: anchors}, khipu.PrepareOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +375,7 @@ func TestItemizeInlineKhipuCoordinatesAndFreeze(t *testing.T) {
 		}
 	}
 	for _, engine := range []string{"firstfit", "knuthplass"} {
-		k, err := owner.BindParagraph(t.Context(), p, []khipu.AtomicAdvance{{ID: 7, Advance: 0}})
+		k, err := owner.BindParagraph(p, []khipu.AtomicAdvance{{ID: 7, Advance: 0}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -406,7 +389,7 @@ func TestItemizeInlineKhipuCoordinatesAndFreeze(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f, err := owner.Freeze(t.Context(), k, breaks, layout)
+		f, err := owner.Freeze(k, breaks, layout)
 		if err != nil {
 			t.Fatal(err)
 		}

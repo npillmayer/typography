@@ -49,7 +49,7 @@ func TestFitSkipBoundDomain(t *testing.T) {
 				if err := geometry.ValidateGeometry(); (err == nil) != tc.valid {
 					t.Fatal("incorrect fixture domain", err)
 				}
-				out, err := fitSplitEqual(t.Context(), v, k, fitFrame{k, 10}, fitFrame{k, 10})
+				out, err := fitSplitEqual(v, k, fitFrame{k, 10}, fitFrame{k, 10})
 				if tc.valid {
 					if err != nil {
 						t.Fatal(err)
@@ -76,11 +76,11 @@ func TestFitSuppressedEmptyWidthGuard(t *testing.T) {
 		calls := c.snapshot()
 		wrong := key
 		wrong.width = 50 * dimen.BP
-		out, err := fitSplitEqual(t.Context(), v, wrong, fitFrame{wrong, 0}, fitFrame{wrong, 0})
+		out, err := fitSplitEqual(v, wrong, fitFrame{wrong, 0}, fitFrame{wrong, 0})
 		if out != nil || !errors.Is(err, fitErrIncompatible) {
 			t.Fatal("accepted wrong diagnostic width", out, err)
 		}
-		out, err = fitSplitEqual(t.Context(), v, key, fitFrame{key, 0}, fitFrame{key, 0})
+		out, err = fitSplitEqual(v, key, fitFrame{key, 0}, fitFrame{key, 0})
 		if err != nil {
 			t.Fatal(err)
 		}

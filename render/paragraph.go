@@ -1,7 +1,6 @@
 package render
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"regexp"
@@ -84,31 +83,24 @@ func proofColor(spans []typestyle.PaintSpan, pos uint64) (string, error) {
 // metrics or derives baselines from mutable Input.
 // Knots are already physical LTR. VisualOrder converts each detached logical
 // glyph fragment to drawing order, preserving its supplied advances/offsets.
-func BuildParagraphProof(ctx context.Context, input ParagraphInput, services Services) (*ParagraphProof, error) {
-	if ctx == nil || input.Frozen == nil || input.VList == nil || input.VList.Frozen() != input.Frozen || services.Backend == nil || services.Identity == nil {
+func BuildParagraphProof(input ParagraphInput, services Services) (*ParagraphProof, error) {
+	if input.Frozen == nil || input.VList == nil || input.VList.Frozen() != input.Frozen || services.Backend == nil || services.Identity == nil {
 		return nil, fmt.Errorf("glyph proof requires retained placements, matching frozen content and rendering services")
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return buildRetainedProof(ctx, input, services, input.VList.Lines())
+
+	return buildRetainedProof(input, services, input.VList.Lines())
 }
 
 // Both public entry points supply validated immutable placements. Keep source
 // coordinates and frozen knot indexes intact while selecting only these lines.
-func buildRetainedProof(ctx context.Context, input ParagraphInput, services Services, placements []layout.Line) (*ParagraphProof, error) {
+func buildRetainedProof(input ParagraphInput, services Services, placements []layout.Line) (*ParagraphProof, error) {
 	p := &ParagraphProof{}
 	for _, placement := range placements {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if err := p.appendLine(ctx, input, services, placement); err != nil {
+		if err := p.appendLine(input, services, placement); err != nil {
 			return nil, err
 		}
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+
 	for _, v := range []float64{p.MinX, p.MinY, p.MaxX, p.MaxY} {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			return nil, fmt.Errorf("non-finite outline bounds")
@@ -128,7 +120,7 @@ func (p *ParagraphProof) include(x, y float64) {
 
 // appendLine uses retained vertical placement and traverses physical knots once.
 // All knots advance the horizontal pen, including glue, fill and atomic boxes.
-func (p *ParagraphProof) appendLine(ctx context.Context, input ParagraphInput, services Services, placement layout.Line) error {
+func (p *ParagraphProof) appendLine(input ParagraphInput, services Services, placement layout.Line) error {
 	li, line := placement.Index, placement.Horizontal
 	baseline := placement.Baseline
 	p.Lines = append(p.Lines, Line{placement.X, baseline, placement.Top, placement.Height, line.Width.Points(), line.TargetWidth.Points()})
@@ -140,7 +132,7 @@ func (p *ParagraphProof) appendLine(ctx context.Context, input ParagraphInput, s
 		t, ok := input.Frozen.CopyText(k)
 		if ok {
 			origin := Glyph{Line: li, Knot: k, X: x, Y: baseline}
-			if err := p.appendText(ctx, input, services, knot, t, origin); err != nil {
+			if err := p.appendText(input, services, knot, t, origin); err != nil {
 				return err
 			}
 		}
@@ -152,7 +144,7 @@ func (p *ParagraphProof) appendLine(ctx context.Context, input ParagraphInput, s
 // appendText resolves identity and paint before ordering a detached fragment.
 // origin supplies its line/knot indexes and initial pen position. Glyph advances
 // affect only this fragment; the enclosing line advances by the frozen knot width.
-func (p *ParagraphProof) appendText(ctx context.Context, input ParagraphInput, services Services, knot khipu.FrozenKnot, t khipu.FrozenText, origin Glyph) error {
+func (p *ParagraphProof) appendText(input ParagraphInput, services Services, knot khipu.FrozenKnot, t khipu.FrozenText, origin Glyph) error {
 	if !t.Context.Params.Font.Valid() {
 		return fmt.Errorf("invalid retained font instance")
 	}
@@ -179,9 +171,6 @@ func (p *ParagraphProof) appendText(ctx context.Context, input ParagraphInput, s
 		return fmt.Errorf("glyph proof line %d knot %d: %w", origin.Line, origin.Knot, err)
 	}
 	for _, g := range visual {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
 		source := sources[g.Cluster]
 		color, err := proofColor(input.Paint, source)
 		if err != nil {

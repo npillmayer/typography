@@ -1,7 +1,6 @@
 package paragraph_test
 
 import (
-	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -56,7 +55,7 @@ func TestExplicitMeasurementLayoutReuse(t *testing.T) {
 			}
 			var cold snapshot
 			for _, warm := range []bool{false, true} {
-				p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString("ab\u00adcd")}, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
+				p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString("ab\u00adcd")}, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -64,7 +63,7 @@ func TestExplicitMeasurementLayoutReuse(t *testing.T) {
 				measure := func() {
 					t.Helper()
 					metrics, resolves := calls.metrics, calls.resolve
-					got, err := p.MeasureIntrinsic(t.Context(), khipu.MeasureRequest{})
+					got, err := p.MeasureIntrinsic(khipu.MeasureRequest{})
 					if err != nil || got != (khipu.IntrinsicWidths{MinContent: 15 * dimen.BP, MaxContent: 20 * dimen.BP}) {
 						t.Fatal(got, err)
 					}
@@ -78,7 +77,7 @@ func TestExplicitMeasurementLayoutReuse(t *testing.T) {
 				var previous *paragraph.Result
 				var retained snapshot
 				for iteration := 0; iteration < 2; iteration++ {
-					out, err := p.Layout(t.Context(), paragraph.LayoutRequest{Params: params(breaker, 15*dimen.BP)})
+					out, err := p.Layout(paragraph.LayoutRequest{Params: params(breaker, 15*dimen.BP)})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -107,20 +106,15 @@ func TestExplicitMeasurementLayoutReuse(t *testing.T) {
 
 func TestExplicitMeasurementStageErrorsAndRetry(t *testing.T) {
 	sentinel := errors.New("explicit provider or backend failed")
-	for _, stage := range []string{"provider", "pre", "post", "cancel"} {
+	for _, stage := range []string{"provider", "pre", "post"} {
 		t.Run(stage, func(t *testing.T) {
 			var calls measurementCalls
 			cfg := measurementConfig(&calls)
 			fail := false
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
 			cfg.Hyphenator = measureExplicitPolicy(func(string, *khipu.Params) ([]khipu.HyphenationFragment, error) {
 				calls.hyphenate++
 				if fail && stage == "provider" {
 					return nil, sentinel
-				}
-				if fail && stage == "cancel" {
-					cancel()
 				}
 				return []khipu.HyphenationFragment{{PreBreak: "-"}}, nil
 			})
@@ -132,19 +126,16 @@ func TestExplicitMeasurementStageErrorsAndRetry(t *testing.T) {
 				s, err := helpers.NewSyntheticStreamingShaper(8)
 				return metricStream{s}, err
 			}
-			p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString("ab\u00adcd")}, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
+			p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString("ab\u00adcd")}, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
 			fail = true
-			got, err := p.MeasureIntrinsic(ctx, khipu.MeasureRequest{})
+			got, err := p.MeasureIntrinsic(khipu.MeasureRequest{})
 			cause := sentinel
-			if stage == "cancel" {
-				cause = context.Canceled
-			}
 			requireMeasureError(t, got, err, paragraph.StageMeasure, cause)
 			fail = false
-			got, err = p.MeasureIntrinsic(t.Context(), khipu.MeasureRequest{})
+			got, err = p.MeasureIntrinsic(khipu.MeasureRequest{})
 			if err != nil || got.MinContent != 15*dimen.BP || calls.hyphenate != 2 {
 				t.Fatal("retry", got, err, calls)
 			}
@@ -153,12 +144,12 @@ func TestExplicitMeasurementStageErrorsAndRetry(t *testing.T) {
 	for _, text := range []string{"ab\u00adcd\u00adef", "ab\u00ad\u00adcd"} {
 		var calls measurementCalls
 		cfg := measurementConfig(&calls)
-		p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString(text)}, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
+		p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString(text)}, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
 		before := calls
-		got, err := p.MeasureIntrinsic(t.Context(), khipu.MeasureRequest{})
+		got, err := p.MeasureIntrinsic(khipu.MeasureRequest{})
 		requireMeasureError(t, got, err, paragraph.StageMeasure, khipu.ErrUnsupportedPolicy)
 		if calls != before {
 			t.Fatal("unsupported multiplicity consulted services")

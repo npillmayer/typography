@@ -13,7 +13,7 @@ var p6Sink any
 
 func p6Fit(t testing.TB, c *paragraph.Continuation, f paragraph.Frame) *paragraph.FlowResult {
 	t.Helper()
-	r, e := c.Fit(t.Context(), f)
+	r, e := c.Fit(f)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -91,20 +91,20 @@ func BenchmarkP6Frames(b *testing.B) {
 								if op == "relayout-narrow" {
 									req.Params.Constraints.Width = f.width * 3 / 4
 								}
-								r, e := f.prepared.Layout(b.Context(), req)
+								r, e := f.prepared.Layout(req)
 								if e != nil {
 									b.Fatal(e)
 								}
-								frag, e := paragraph.Fragment(b.Context(), r.VList)
+								frag, e := paragraph.Fragment(r.VList)
 								if e != nil {
 									b.Fatal(e)
 								}
 								key := paragraph.FragmentReuseKey{Width: req.Params.Constraints.Width, Source: 1, Styles: 1, Fonts: 1, LineHeight: 1, Atomics: 1, Policy: 1}
-								a, e := paragraph.FitFragment(b.Context(), frag, key, key, height)
+								a, e := paragraph.FitFragment(frag, key, key, height)
 								if e != nil {
 									b.Fatal(e)
 								}
-								tail, e := paragraph.FitFragment(b.Context(), a.Remainder, key, key, 30000)
+								tail, e := paragraph.FitFragment(a.Remainder, key, key, 30000)
 								if e != nil || tail.Status != paragraph.FitComplete || len(tail.Overfull) != 0 {
 									b.Fatal("relayout", e)
 								}
@@ -149,13 +149,13 @@ func BenchmarkP6FixedSuffix(b *testing.B) {
 					b.ResetTimer()
 					for i := 0; i < b.N; i++ {
 						if op == "checkpoint" {
-							r, e := paragraph.P6Checkpoint(b.Context(), a.Continuation)
+							r, e := paragraph.P6Checkpoint(a.Continuation)
 							if e != nil {
 								b.Fatal(e)
 							}
 							p6Sink = r
 						} else {
-							r, m, e := paragraph.P6Phases(b.Context(), a.Continuation, f.width*3/4)
+							r, m, e := paragraph.P6Phases(a.Continuation, f.width*3/4)
 							if e != nil {
 								b.Fatal(e)
 							}
@@ -205,7 +205,7 @@ func TestP6MeasurementAdmission(t *testing.T) {
 				}
 				before := f.calls.snapshot()
 				b := p6Pair(t, f, h, true)
-				probe, m, e := paragraph.P6Phases(t.Context(), a.Continuation, f.width*3/4)
+				probe, m, e := paragraph.P6Phases(a.Continuation, f.width*3/4)
 				if e != nil || m.BoundKnots <= 0 || m.FrozenKnots <= 0 || m.AssembledLines <= cut || m.BreakWidthQueries == 0 || m.PrefixWidthQueries != 0 {
 					t.Fatal(m, e)
 				}
@@ -244,7 +244,7 @@ func BenchmarkP6Initial(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					r, e := f.prepared.StartFlow(b.Context(), f.request)
+					r, e := f.prepared.StartFlow(f.request)
 					if e != nil {
 						b.Fatal(e)
 					}

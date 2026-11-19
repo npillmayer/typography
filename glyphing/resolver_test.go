@@ -115,12 +115,12 @@ func TestMappingAndSnapshotOwnership(t *testing.T) {
 	if r.Snapshot().Rules[0].Weight != 700 {
 		t.Fatal("snapshot aliases policy")
 	}
-	replay, err := glyphing.NewStyleMapper(t.Context(), *r.Snapshot(), f)
+	replay, err := glyphing.NewStyleMapper(*r.Snapshot(), f)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, _ := r.CheckText(context.Background(), "éa", nil)
-	b, _ := replay.CheckText(context.Background(), "éa", nil)
+	a, _ := r.CheckText("éa", nil)
+	b, _ := replay.CheckText("éa", nil)
 	if !reflect.DeepEqual(a, b) {
 		t.Fatalf("snapshot binding identity changed: %+v %+v", a, b)
 	}
@@ -130,7 +130,7 @@ func TestGraphemesScriptsAndSoftHyphenContext(t *testing.T) {
 	f := newServices()
 	r := load(t, f, fixtureSettings{DefaultPath: "primary", Size: 12 * dimen.BP, Fallbacks: []string{"fallback", "unused"}})
 	for _, text := range []string{"é\u00adé", "\u00adé", "é\u00ad\u00ad"} {
-		b, err := r.CheckText(context.Background(), text, nil)
+		b, err := r.CheckText(text, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -138,37 +138,37 @@ func TestGraphemesScriptsAndSoftHyphenContext(t *testing.T) {
 			t.Fatalf("lost discretionary context: %q %+v", text, b)
 		}
 	}
-	b, err := r.CheckText(context.Background(), "a\u0301a", nil)
+	b, err := r.CheckText("a\u0301a", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(b) != 2 || b[0].End != 3 || b[0].Path != "fallback" || b[1].Start != 3 || b[1].Path != "primary" {
 		t.Fatalf("grapheme/fallback %+v", b)
 	}
-	b, err = r.CheckText(context.Background(), "aאב", nil)
+	b, err = r.CheckText("aאב", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(b) != 2 || b[0].Script != "Latn" || b[1].Script != "Hebr" || b[1].End != 5 {
 		t.Fatalf("script byte ranges %+v", b)
 	}
-	b, err = r.CheckText(context.Background(), "\u00ad\u00ad", nil)
+	b, err = r.CheckText("\u00ad\u00ad", nil)
 	if err != nil || len(b) != 1 || b[0].Path != "primary" {
 		t.Fatalf("marker-only primary %+v %v", b, err)
 	}
 	for _, text := range []string{"Ω", "X"} {
-		if _, err = r.CheckText(context.Background(), text, nil); err == nil {
+		if _, err = r.CheckText(text, nil); err == nil {
 			t.Fatalf("accepted unsupported/missing %q", text)
 		}
 	}
 	css := documentStyle()
 	larger := css
 	larger.EmSize *= 2
-	if _, err = r.CheckText(context.Background(), "a\u0301", []style.Span{{Start: 0, End: 1, Style: css}, {Start: 1, End: 3, Style: larger}}); err == nil {
+	if _, err = r.CheckText("a\u0301", []style.Span{{Start: 0, End: 1, Style: css}, {Start: 1, End: 3, Style: larger}}); err == nil {
 		t.Fatal("split grapheme")
 	}
 	f.coverageErr = errors.New("cmap failed")
-	if _, err = r.CheckText(context.Background(), "é", nil); !errors.Is(err, f.coverageErr) {
+	if _, err = r.CheckText("é", nil); !errors.Is(err, f.coverageErr) {
 		t.Fatalf("coverage failure hidden: %v", err)
 	}
 }
@@ -180,7 +180,7 @@ func TestPaintProjectionMergesShapingOnly(t *testing.T) {
 	blue.Color = "blue"
 	spans := []style.Span{{Start: 0, End: 1, Style: red}, {Start: 1, End: 2, Style: blue}}
 	paint := style.ProjectPaint(spans)
-	result, err := r.ItemizeWithMetadata(context.Background(), "aa", spans)
+	result, err := r.ItemizeWithMetadata("aa", spans)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestSoftHyphensCrossPaintSpans(t *testing.T) {
 	red := documentStyle()
 	blue := red
 	blue.Color = "blue"
-	b, err := r.CheckText(context.Background(), "é\u00ad", []style.Span{{Start: 0, End: 2, Style: red}, {Start: 2, End: 4, Style: blue}})
+	b, err := r.CheckText("é\u00ad", []style.Span{{Start: 0, End: 2, Style: red}, {Start: 2, End: 4, Style: blue}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -46,7 +46,6 @@ func (s stream) Shape(ctx context.Context, p contracts.ShapeParams, r contracts.
 type backend struct {
 	calls     int
 	fail      error
-	cancel    context.CancelFunc
 	nonfinite bool
 }
 
@@ -62,9 +61,6 @@ func (b *backend) VisualOrder(g []contracts.ShapedGlyph, d xbidi.Direction) ([]c
 func (b *backend) Outline(contracts.FontFace, uint32) (render.Outline, error) {
 	b.calls++
 	if b.calls == 2 {
-		if b.cancel != nil {
-			b.cancel()
-		}
 		if b.fail != nil {
 			return render.Outline{}, b.fail
 		}
@@ -79,7 +75,7 @@ func (b *backend) Outline(contracts.FontFace, uint32) (render.Outline, error) {
 func proofInput(t *testing.T) (render.ParagraphInput, *guardedFace) {
 	t.Helper()
 	f := &guardedFace{}
-	p, err := paragraph.Run(t.Context(), paragraph.Input{Text: styled.TextFromString("aאב"), Direction: bidi.LeftToRight}, paragraph.Params{
+	p, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("aאב"), Direction: bidi.LeftToRight}, paragraph.Params{
 		Constraints: paragraph.Constraints{Width: 100 * dimen.BP}, Breaker: paragraph.FirstFit, Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight}, LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.NormalHeight}},
 	}, khipu.Config{Streaming: &khipu.StreamingConfig{Resolver: helpers.DefaultStyleResolver{}, Defaults: contracts.ResolvedRunStyle{Font: f, EmSize: 10 * dimen.BP}, NewShaper: func() (contracts.StreamingShaper, error) {
 		s, e := helpers.NewSyntheticStreamingShaper(8)
@@ -96,7 +92,7 @@ func TestRetainedProofCoordinatesAndLifetime(t *testing.T) {
 	f.deny = true
 	b := &backend{}
 	services := render.Services{Backend: b, Identity: b}
-	p, err := render.BuildParagraphProof(t.Context(), input, services)
+	p, err := render.BuildParagraphProof(input, services)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +111,7 @@ func TestRetainedProofCoordinatesAndLifetime(t *testing.T) {
 			t.Fatalf("glyph %d: %+v", i, g)
 		}
 	}
-	again, err := render.BuildParagraphProof(t.Context(), input, services)
+	again, err := render.BuildParagraphProof(input, services)
 	if err != nil || !reflect.DeepEqual(p, again) {
 		t.Fatal("mutated retained glyphs", err)
 	}
@@ -125,30 +121,23 @@ func TestRetainedProofCoordinatesAndLifetime(t *testing.T) {
 	}
 }
 
-func TestRetainedProofFailureAndCancellation(t *testing.T) {
+func TestRetainedProofFailure(t *testing.T) {
 	input, _ := proofInput(t)
 	sentinel := errors.New("outline unavailable")
-	for _, cancelled := range []bool{false, true} {
-		ctx, cancel := context.WithCancel(t.Context())
+	{
 		b := &backend{fail: sentinel}
 		want := sentinel
-		if cancelled {
-			b.fail = nil
-			b.cancel = cancel
-			want = context.Canceled
-		}
-		p, err := render.BuildParagraphProof(ctx, input, render.Services{Backend: b, Identity: b})
-		cancel()
+		p, err := render.BuildParagraphProof(input, render.Services{Backend: b, Identity: b})
 		if p != nil || !errors.Is(err, want) {
 			t.Fatal("partial proof escaped", p, err)
 		}
 	}
 	b := &backend{nonfinite: true}
-	if p, err := render.BuildParagraphProof(t.Context(), input, render.Services{Backend: b, Identity: b}); p != nil || err == nil {
+	if p, err := render.BuildParagraphProof(input, render.Services{Backend: b, Identity: b}); p != nil || err == nil {
 		t.Fatal("non-finite outline accepted")
 	}
 	input.VList = nil
-	if p, err := render.BuildParagraphProof(t.Context(), input, render.Services{Backend: b, Identity: b}); p != nil || err == nil {
+	if p, err := render.BuildParagraphProof(input, render.Services{Backend: b, Identity: b}); p != nil || err == nil {
 		t.Fatal("missing placements reconstructed")
 	}
 }
@@ -202,7 +191,7 @@ func TestRetainedProofServiceOrderAndFailurePrecedence(t *testing.T) {
 				input.Paint[0].Paint.Color = "invalid color"
 			}
 			b := &tracingBackend{failAt: tc.failAt, err: sentinel}
-			p, err := render.BuildParagraphProof(t.Context(), input, render.Services{Backend: b, Identity: b})
+			p, err := render.BuildParagraphProof(input, render.Services{Backend: b, Identity: b})
 			if !reflect.DeepEqual(b.events, tc.events) {
 				t.Fatalf("service calls = %v, want %v", b.events, tc.events)
 			}

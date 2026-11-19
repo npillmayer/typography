@@ -1,7 +1,6 @@
 package paragraph
 
 import (
-	"context"
 	"fmt"
 	"math"
 
@@ -35,7 +34,7 @@ type AtomicBox struct {
 	Alignment                 AtomicAlignment
 }
 
-func validateAtomics(ctx context.Context, anchors []contracts.AtomicAnchor, input []AtomicBox) (map[contracts.AtomicID]AtomicBox, []khipu.AtomicAdvance, error) {
+func validateAtomics(anchors []contracts.AtomicAnchor, input []AtomicBox) (map[contracts.AtomicID]AtomicBox, []khipu.AtomicAdvance, error) {
 	bad := func() (map[contracts.AtomicID]AtomicBox, []khipu.AtomicAdvance, error) {
 		return nil, nil, fmt.Errorf("%w: atomic IDs, alignment or geometry", contracts.ErrIllegalArguments)
 	}
@@ -45,9 +44,6 @@ func validateAtomics(ctx context.Context, anchors []contracts.AtomicAnchor, inpu
 	boxes := make(map[contracts.AtomicID]AtomicBox, len(input))
 	advances := make([]khipu.AtomicAdvance, 0, len(input))
 	for _, b := range input {
-		if err := ctx.Err(); err != nil {
-			return nil, nil, err
-		}
 		if _, duplicate := boxes[b.ID]; duplicate || b.ID == 0 || b.Alignment != AlignBottomMarginEdge ||
 			b.BorderWidth < 0 || b.BorderWidth >= dimen.Fil || b.BorderHeight < 0 || b.BorderHeight >= dimen.Fil {
 			return bad()
@@ -81,13 +77,10 @@ func (b AtomicBox) above() int64 {
 
 // placeAtomics traverses physical frozen order exactly once, including glue and
 // fill in pen advancement. No second bidi reordering or coordinate sort occurs.
-func placeAtomics(ctx context.Context, v *assembly, boxes map[contracts.AtomicID]AtomicBox) error {
+func placeAtomics(v *assembly, boxes map[contracts.AtomicID]AtomicBox) error {
 	for _, line := range v.lines {
 		pen := int64(line.Horizontal.LeftSkip)
 		for i := line.Horizontal.FirstKnot; i < line.Horizontal.FirstKnot+line.Horizontal.KnotCount; i++ {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
 			knot, _ := v.frozen.Knot(i)
 			if id, ok := v.frozen.Atomic(i); ok {
 				box, exists := boxes[id]
@@ -114,7 +107,7 @@ func placeAtomics(ctx context.Context, v *assembly, boxes map[contracts.AtomicID
 			}
 		}
 	}
-	return ctx.Err()
+	return nil
 }
 
 func addPen(pen, delta int64) (int64, error) {

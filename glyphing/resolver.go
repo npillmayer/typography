@@ -1,7 +1,6 @@
 package glyphing
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -122,8 +121,8 @@ func (r *StyleMapper) ResolveStyle(value styled.Style, defaults contracts.Resolv
 }
 
 // CheckText validates itemization and coverage without retaining the styled text.
-func (r *StyleMapper) CheckText(ctx context.Context, text string, spans []typestyle.Span) ([]FontTextRun, error) {
-	_, bindings, err := r.Itemize(ctx, text, spans)
+func (r *StyleMapper) CheckText(text string, spans []typestyle.Span) ([]FontTextRun, error) {
+	_, bindings, err := r.Itemize(text, spans)
 	return bindings, err
 }
 

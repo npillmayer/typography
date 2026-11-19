@@ -1,8 +1,6 @@
 package paragraph_test
 
 import (
-	"context"
-
 	"github.com/npillmayer/khipu/dimen"
 	"github.com/npillmayer/typography/glyphing/paragraph"
 	"github.com/npillmayer/typography/layout"
@@ -42,16 +40,16 @@ type fitSplitResult struct {
 	interiorSplits int
 }
 
-func fitSplitEqual(ctx context.Context, v *layout.VList, key fitReuseKey, a, b fitFrame) (*fitSplitResult, error) {
-	f, err := paragraph.Fragment(ctx, v)
+func fitSplitEqual(v *layout.VList, key fitReuseKey, a, b fitFrame) (*fitSplitResult, error) {
+	f, err := paragraph.Fragment(v)
 	if err != nil {
 		return nil, err
 	}
-	x, err := paragraph.FitFragment(ctx, f, key.public(), a.key.public(), a.height)
+	x, err := paragraph.FitFragment(f, key.public(), a.key.public(), a.height)
 	if err != nil {
 		return nil, err
 	}
-	y, err := paragraph.FitFragment(ctx, x.Remainder, key.public(), b.key.public(), b.height)
+	y, err := paragraph.FitFragment(x.Remainder, key.public(), b.key.public(), b.height)
 	if err != nil {
 		return nil, err
 	}

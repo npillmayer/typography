@@ -1,7 +1,6 @@
 package paragraph
 
 import (
-	"context"
 	"fmt"
 	"slices"
 
@@ -34,14 +33,9 @@ type Prepared struct {
 // glyph coverage. The returned private styles retain their original identities.
 // Zero config uses khipu's synthetic backend; CSSLineHeight later requires explicit
 // streaming defaults. Hyphenation policy is fixed by options for every layout.
-func Prepare(ctx context.Context, input Input, options khipu.PrepareOptions, config khipu.Config) (*Prepared, error) {
+func Prepare(input Input, options khipu.PrepareOptions, config khipu.Config) (*Prepared, error) {
 	fail := func(stage Stage, err error) (*Prepared, error) { return nil, &Error{stage, err} }
-	if ctx == nil {
-		return fail(StageInput, invalidInput("nil context"))
-	}
-	if err := ctx.Err(); err != nil {
-		return fail(StageInput, err)
-	}
+
 	if input.Direction != bidi.LeftToRight && input.Direction != bidi.RightToLeft {
 		return fail(StageInput, invalidInput("direction"))
 	}
@@ -57,12 +51,10 @@ func Prepare(ctx context.Context, input Input, options khipu.PrepareOptions, con
 	for run := range para.BidiLevels().LogicalSegments() {
 		p.runs = append(p.runs, run)
 	}
-	if err := ctx.Err(); err != nil {
-		return fail(StageParagraph, err)
-	}
+
 	p.owner = khipu.NewKhipukamayuq(p.config)
 	options.AtomicBoundaries = slices.Clone(options.AtomicBoundaries)
-	p.content, err = p.owner.PrepareParagraph(ctx, khipu.ParagraphInput{Paragraph: para, Atomics: p.anchors}, options)
+	p.content, err = p.owner.PrepareParagraph(khipu.ParagraphInput{Paragraph: para, Atomics: p.anchors}, options)
 	if err != nil {
 		return fail(StagePrepare, err)
 	}
@@ -87,13 +79,13 @@ type LayoutRequest struct {
 // Layout validates geometry, derives advances, binds fresh working material,
 // breaks, freezes and assembles a detached result. It does not reshape the base
 // paragraph. Lazy discretionary shaping remains owner-controlled. Cancellation
-// is checked between stages; synchronous collaborators retain their limits.
-func (p *Prepared) Layout(ctx context.Context, request LayoutRequest) (*Result, error) {
-	b, err := p.bindLayout(ctx, request)
+// is confined to internal streaming coordination.
+func (p *Prepared) Layout(request LayoutRequest) (*Result, error) {
+	b, err := p.bindLayout(request)
 	if err != nil {
 		return nil, err
 	}
-	return finishLayout(ctx, p.owner, b.bound, b.params, b.geometry, p.text, p.config, p.runs, b.boxes)
+	return finishLayout(p.owner, b.bound, b.params, b.geometry, p.text, p.config, p.runs, b.boxes)
 }
 
 type boundLayout struct {
@@ -104,14 +96,9 @@ type boundLayout struct {
 	bound    *khipu.Khipu
 }
 
-func (p *Prepared) bindLayout(ctx context.Context, request LayoutRequest) (*boundLayout, error) {
+func (p *Prepared) bindLayout(request LayoutRequest) (*boundLayout, error) {
 	fail := func(stage Stage, err error) (*boundLayout, error) { return nil, &Error{stage, err} }
-	if ctx == nil {
-		return fail(StageInput, invalidInput("nil context"))
-	}
-	if err := ctx.Err(); err != nil {
-		return fail(StageInput, err)
-	}
+
 	if p == nil || p.owner == nil || p.content == nil {
 		return fail(StageInput, invalidInput("nil or uninitialized preparation"))
 	}
@@ -123,11 +110,11 @@ func (p *Prepared) bindLayout(ctx context.Context, request LayoutRequest) (*boun
 	if err := geometry.ValidateGeometry(); err != nil {
 		return fail(StageInput, fmt.Errorf("%w: %w", ErrInvalidInput, err))
 	}
-	boxes, advances, err := validateAtomics(ctx, p.anchors, request.Atomics)
+	boxes, advances, err := validateAtomics(p.anchors, request.Atomics)
 	if err != nil {
 		return fail(StageBind, err)
 	}
-	bound, err := p.owner.BindParagraph(ctx, p.content, advances)
+	bound, err := p.owner.BindParagraph(p.content, advances)
 	if err != nil {
 		return fail(StageBind, err)
 	}

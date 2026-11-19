@@ -1,7 +1,6 @@
 package paragraph_test
 
 import (
-	"context"
 	"errors"
 	"math"
 	"reflect"
@@ -18,7 +17,7 @@ import (
 
 func checkSplit(t *testing.T, v *layout.VList) {
 	t.Helper()
-	f, err := paragraph.Fragment(t.Context(), v)
+	f, err := paragraph.Fragment(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +31,7 @@ func checkSplit(t *testing.T, v *layout.VList) {
 		}
 	}
 	for at := 1; at < len(original); at++ {
-		a, b, err := paragraph.SplitFragment(t.Context(), f, at)
+		a, b, err := paragraph.SplitFragment(f, at)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -83,7 +82,7 @@ func checkSplit(t *testing.T, v *layout.VList) {
 			}
 		}
 		if len(b.Lines()) > 1 {
-			_, tail, err := paragraph.SplitFragment(t.Context(), b, 1)
+			_, tail, err := paragraph.SplitFragment(b, 1)
 			if err != nil || tail.Range().Start != at+1 {
 				t.Fatal(tail, err)
 			}
@@ -97,7 +96,7 @@ func checkSplit(t *testing.T, v *layout.VList) {
 func TestFragmentCSSPolicies(t *testing.T) {
 	for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
 		for _, policy := range []paragraph.Params{params(breaker, 30*dimen.BP), cssParams(breaker, factor(.5)), cssParams(breaker, factor(0))} {
-			r, err := paragraph.Run(t.Context(), paragraph.Input{Text: styled.TextFromString("aa\n\naa\naa")}, policy, synthetic())
+			r, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("aa\n\naa\naa")}, policy, synthetic())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -108,12 +107,12 @@ func TestFragmentCSSPolicies(t *testing.T) {
 		}
 	}
 	for _, text := range []string{"", "aa"} {
-		r, err := paragraph.Run(t.Context(), paragraph.Input{Text: styled.TextFromString(text)}, cssParams(paragraph.FirstFit, factor(1)), synthetic())
+		r, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString(text)}, cssParams(paragraph.FirstFit, factor(1)), synthetic())
 		if err != nil {
 			t.Fatal(err)
 		}
 		checkSplit(t, r.VList)
-		f, err := paragraph.Fragment(t.Context(), r.VList)
+		f, err := paragraph.Fragment(r.VList)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -121,7 +120,7 @@ func TestFragmentCSSPolicies(t *testing.T) {
 			t.Fatal("diagnostic line became content")
 		}
 		for _, at := range []int{-1, 0, len(f.Lines()), len(f.Lines()) + 1} {
-			a, b, err := paragraph.SplitFragment(t.Context(), f, at)
+			a, b, err := paragraph.SplitFragment(f, at)
 			if a != nil || b != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 				t.Fatal(a, b, err)
 			}
@@ -131,19 +130,19 @@ func TestFragmentCSSPolicies(t *testing.T) {
 
 func TestFragmentAtomicsRTLAndOverflow(t *testing.T) {
 	for _, direction := range []bidi.Direction{bidi.LeftToRight, bidi.RightToLeft} {
-		p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString("\uFFFC\uFFFC\naa\n\uFFFC"), Direction: direction, Atomics: []contracts.AtomicAnchor{{ID: 7, ByteOffset: 0}, {ID: 2, ByteOffset: 3}, {ID: 9, ByteOffset: 10}}}, khipu.PrepareOptions{}, synthetic())
+		p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString("\uFFFC\uFFFC\naa\n\uFFFC"), Direction: direction, Atomics: []contracts.AtomicAnchor{{ID: 7, ByteOffset: 0}, {ID: 2, ByteOffset: 3}, {ID: 9, ByteOffset: 10}}}, khipu.PrepareOptions{}, synthetic())
 		if err != nil {
 			t.Fatal(err)
 		}
 		boxes := []paragraph.AtomicBox{atomicBox(7, 0, 0), atomicBox(2, 4, 6), atomicBox(9, 0, 0)}
 		boxes[1].Margin.Left = -2 * dimen.BP
 		boxes[0].Margin.Right = -2 * dimen.BP
-		r, err := p.Layout(t.Context(), paragraph.LayoutRequest{Params: mixedParams(paragraph.FirstFit, 30*dimen.BP), Atomics: boxes})
+		r, err := p.Layout(paragraph.LayoutRequest{Params: mixedParams(paragraph.FirstFit, 30*dimen.BP), Atomics: boxes})
 		if err != nil {
 			t.Fatal(err)
 		}
 		checkSplit(t, r.VList)
-		f, err := paragraph.Fragment(t.Context(), r.VList)
+		f, err := paragraph.Fragment(r.VList)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -157,17 +156,17 @@ func TestFragmentAtomicsRTLAndOverflow(t *testing.T) {
 				orig[i].Y = -dimen.Fil.Points() + .5
 			}
 		}
-		overflow, err := layout.NewFragment(t.Context(), f.Frozen(), f.Range(), f.Box(), f.Lines(), f.Materials(), orig)
+		overflow, err := layout.NewFragment(f.Frozen(), f.Range(), f.Box(), f.Lines(), f.Materials(), orig)
 		if err != nil {
 			t.Fatal(err)
 		}
-		a, b, err := paragraph.SplitFragment(t.Context(), overflow, 1)
+		a, b, err := paragraph.SplitFragment(overflow, 1)
 		if a != nil || b != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 			t.Fatal("translated out-of-domain atomic accepted", err)
 		}
 		// Missing, swapped, extra and invalid origins cannot be published.
 		for _, bad := range [][]layout.AtomicPlacement{orig[:1], append(orig, orig[0]), {{ID: 99, Line: 0}}} {
-			if got, err := layout.NewFragment(t.Context(), f.Frozen(), f.Range(), f.Box(), f.Lines(), f.Materials(), bad); got != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
+			if got, err := layout.NewFragment(f.Frozen(), f.Range(), f.Box(), f.Lines(), f.Materials(), bad); got != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 				t.Fatal(got, err)
 			}
 		}
@@ -181,11 +180,11 @@ func TestFragmentReplacementsNoServiceCalls(t *testing.T) {
 		calls.hyphenate++
 		return []khipu.HyphenationFragment{{PreBreak: "-"}}, nil
 	})
-	p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString("ab\u00adcd\naa")}, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
+	p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString("ab\u00adcd\naa")}, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := p.Layout(t.Context(), paragraph.LayoutRequest{Params: params(paragraph.FirstFit, 15*dimen.BP)})
+	r, err := p.Layout(paragraph.LayoutRequest{Params: params(paragraph.FirstFit, 15*dimen.BP)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,53 +203,8 @@ func TestFragmentReplacementsNoServiceCalls(t *testing.T) {
 	}
 }
 
-// Cancel at deterministic checkpoints, including after a prefix has been built.
-type fragmentCancelContext struct {
-	context.Context
-	remaining int
-}
-
-func (c *fragmentCancelContext) Err() error {
-	c.remaining--
-	if c.remaining <= 0 {
-		return context.Canceled
-	}
-	return nil
-}
-
-func TestFragmentCancellationAndRecovery(t *testing.T) {
-	r, err := paragraph.Run(t.Context(), paragraph.Input{Text: styled.TextFromString("aa\naa\naa")}, params(paragraph.FirstFit, 30*dimen.BP), synthetic())
-	if err != nil {
-		t.Fatal(err)
-	}
-	f, err := paragraph.Fragment(t.Context(), r.VList)
-	if err != nil {
-		t.Fatal(err)
-	}
-	canceled, succeeded := 0, false
-	for n := 1; n < 200; n++ {
-		ctx := &fragmentCancelContext{Context: t.Context(), remaining: n}
-		a, b, err := paragraph.SplitFragment(ctx, f, 1)
-		if err == nil {
-			succeeded = true
-			break
-		}
-		if a != nil || b != nil || !errors.Is(err, context.Canceled) {
-			t.Fatal(a, b, err)
-		}
-		canceled++
-	}
-	if !succeeded || canceled < 10 {
-		t.Fatal("missing late cancellation coverage", canceled)
-	}
-	checkSplit(t, r.VList)
-	if a, b, err := paragraph.SplitFragment(t.Context(), new(layout.Fragment), 1); a != nil || b != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
-		t.Fatal(a, b, err)
-	}
-}
-
 func TestFragmentRejectsMalformedVListAndNilInput(t *testing.T) {
-	r, err := paragraph.Run(t.Context(), paragraph.Input{Text: styled.TextFromString("aa aa")}, params(paragraph.FirstFit, 15*dimen.BP), synthetic())
+	r, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("aa aa")}, params(paragraph.FirstFit, 15*dimen.BP), synthetic())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,11 +216,8 @@ func TestFragmentRejectsMalformedVListAndNilInput(t *testing.T) {
 		t.Fatal("accepted mismatched placement", v, err)
 	}
 	for _, v := range []*layout.VList{nil, new(layout.VList)} {
-		if f, err := paragraph.Fragment(t.Context(), v); f != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
+		if f, err := paragraph.Fragment(v); f != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 			t.Fatal(f, err)
 		}
-	}
-	if f, err := paragraph.Fragment(nil, r.VList); f != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
-		t.Fatal(f, err)
 	}
 }

@@ -1,7 +1,6 @@
 package paragraph_test
 
 import (
-	"context"
 	"errors"
 	"io"
 	"reflect"
@@ -70,7 +69,7 @@ func TestPreparedReuseAndDetachedResults(t *testing.T) {
 		return 0
 	}}
 	options := khipu.PrepareOptions{AtomicBoundaries: []khipu.AtomicBoundary{{ByteOffset: 6, Action: khipu.ProhibitBoundary}}}
-	p, err := paragraph.Prepare(t.Context(), input, options, cfg)
+	p, err := paragraph.Prepare(input, options, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +85,7 @@ func TestPreparedReuseAndDetachedResults(t *testing.T) {
 	cfg.Params.SpaceStretchPercent = -1
 	cfg.ParFillSkip.W = dimen.Fil
 	request := paragraph.LayoutRequest{Params: mixedParams(paragraph.FirstFit, 100*dimen.BP), Horizontal: &paragraph.HorizontalLayout{}, Atomics: []paragraph.AtomicBox{atomicBox(2, 8, 12), atomicBox(9, 6, 4)}}
-	first, err := p.Layout(t.Context(), request)
+	first, err := p.Layout(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +105,7 @@ func TestPreparedReuseAndDetachedResults(t *testing.T) {
 			request.Params = mixedParams(breaker, width)
 			request.Atomics[0].BorderWidth = 20 * dimen.BP
 			request.Atomics[0].BorderHeight = 25 * dimen.BP
-			out, err := p.Layout(t.Context(), request)
+			out, err := p.Layout(request)
 			if err != nil {
 				t.Fatal(breaker, width, err)
 			}
@@ -142,7 +141,7 @@ func TestPreparedAtomicGeometryOracles(t *testing.T) {
 			}
 			cfg := synthetic()
 			cfg.Streaming.Resolver = resolver{}
-			p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: text, Atomics: []contracts.AtomicAnchor{{ID: 1, ByteOffset: tc.offset}}}, khipu.PrepareOptions{}, cfg)
+			p, err := paragraph.Prepare(paragraph.Input{Text: text, Atomics: []contracts.AtomicAnchor{{ID: 1, ByteOffset: tc.offset}}}, khipu.PrepareOptions{}, cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -150,7 +149,7 @@ func TestPreparedAtomicGeometryOracles(t *testing.T) {
 			box.Margin = paragraph.AtomicMargins{Top: 3 * dimen.BP, Bottom: 2 * dimen.BP, Left: 4 * dimen.BP, Right: 5 * dimen.BP}
 			request := paragraph.LayoutRequest{Params: mixedParams(breaker, 100*dimen.BP), Horizontal: &paragraph.HorizontalLayout{LeftSkip: fixedSkip(2), RightSkip: fixedSkip(3)}, Atomics: []paragraph.AtomicBox{box}}
 			request.Params.LineLayout.Runs = []paragraph.LineHeightSpan{{Start: tc.offset, End: tc.offset + 3, Height: length(200 * dimen.BP)}}
-			out, err := p.Layout(t.Context(), request)
+			out, err := p.Layout(request)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -170,7 +169,6 @@ func TestPreparedAtomicGeometryOracles(t *testing.T) {
 					}
 				}
 			}
-
 		}
 	}
 }
@@ -178,14 +176,14 @@ func TestPreparedAtomicGeometryOracles(t *testing.T) {
 func TestPreparedAtomicSignedAndVisualOrder(t *testing.T) {
 	for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
 		for _, direction := range []bidi.Direction{bidi.LeftToRight, bidi.RightToLeft} {
-			p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString("\uFFFC\uFFFC\uFFFC"), Direction: direction, Atomics: []contracts.AtomicAnchor{{ID: 9}, {ID: 2, ByteOffset: 3}, {ID: 7, ByteOffset: 6}}}, khipu.PrepareOptions{}, synthetic())
+			p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString("\uFFFC\uFFFC\uFFFC"), Direction: direction, Atomics: []contracts.AtomicAnchor{{ID: 9}, {ID: 2, ByteOffset: 3}, {ID: 7, ByteOffset: 6}}}, khipu.PrepareOptions{}, synthetic())
 			if err != nil {
 				t.Fatal(err)
 			}
 			boxes := []paragraph.AtomicBox{atomicBox(7, 0, 0), atomicBox(2, 0, 2), atomicBox(9, 20, 0)}
 			boxes[1].Margin.Right = -5 * dimen.BP
 			boxes[1].Margin.Top = -6 * dimen.BP // Signed above-baseline contribution -4bp.
-			out, err := p.Layout(t.Context(), paragraph.LayoutRequest{Params: mixedParams(breaker, 100*dimen.BP), Horizontal: &paragraph.HorizontalLayout{}, Atomics: boxes})
+			out, err := p.Layout(paragraph.LayoutRequest{Params: mixedParams(breaker, 100*dimen.BP), Horizontal: &paragraph.HorizontalLayout{}, Atomics: boxes})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -207,17 +205,17 @@ func TestPreparedZeroWidthAndTextOnlyCompatibility(t *testing.T) {
 			cfg := synthetic()
 			cfg.Hyphenator = softHyphens{}
 			input := paragraph.Input{Text: styled.TextFromString(value)}
-			prepared, err := paragraph.Prepare(t.Context(), input, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
+			prepared, err := paragraph.Prepare(input, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
 			for _, width := range []dimen.DU{0, 15 * dimen.BP, 100 * dimen.BP} {
 				p := params(breaker, width)
-				got, err := prepared.Layout(t.Context(), paragraph.LayoutRequest{Params: p})
+				got, err := prepared.Layout(paragraph.LayoutRequest{Params: p})
 				if err != nil {
 					t.Fatal(err)
 				}
-				want, err := paragraph.Run(t.Context(), input, p, cfg)
+				want, err := paragraph.Run(input, p, cfg)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -226,12 +224,12 @@ func TestPreparedZeroWidthAndTextOnlyCompatibility(t *testing.T) {
 				}
 			}
 		}
-		p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString("\uFFFC"), Atomics: []contracts.AtomicAnchor{{ID: 1}}}, khipu.PrepareOptions{}, synthetic())
+		p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString("\uFFFC"), Atomics: []contracts.AtomicAnchor{{ID: 1}}}, khipu.PrepareOptions{}, synthetic())
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, width := range []int{0, 4} {
-			out, err := p.Layout(t.Context(), paragraph.LayoutRequest{Params: mixedParams(breaker, 0), Atomics: []paragraph.AtomicBox{atomicBox(1, width, 0)}})
+			out, err := p.Layout(paragraph.LayoutRequest{Params: mixedParams(breaker, 0), Atomics: []paragraph.AtomicBox{atomicBox(1, width, 0)}})
 			if err != nil || len(out.VList.AtomicPlacements()) != 1 || out.VList.Box().Extent != 10 {
 				t.Fatal(out, err)
 			}
@@ -245,29 +243,21 @@ func TestPreparedZeroWidthAndTextOnlyCompatibility(t *testing.T) {
 
 func TestPreparedStageErrorsAndRecovery(t *testing.T) {
 	input := paragraph.Input{Text: styled.TextFromString("\uFFFC"), Atomics: []contracts.AtomicAnchor{{ID: 1}}}
-	p, err := paragraph.Prepare(t.Context(), input, khipu.PrepareOptions{}, synthetic())
+	p, err := paragraph.Prepare(input, khipu.PrepareOptions{}, synthetic())
 	if err != nil {
 		t.Fatal(err)
 	}
 	request := paragraph.LayoutRequest{Params: mixedParams(paragraph.FirstFit, 100*dimen.BP), Atomics: []paragraph.AtomicBox{atomicBox(1, 2, 3)}}
-	out, err := paragraph.Run(t.Context(), input, request.Params, synthetic())
+	out, err := paragraph.Run(input, request.Params, synthetic())
 	requireStage(t, out, err, paragraph.StageInput, khipu.ErrIllegalArguments)
-	bad, err := paragraph.Prepare(nil, input, khipu.PrepareOptions{}, synthetic())
-	requireStage(t, bad, err, paragraph.StageInput, khipu.ErrIllegalArguments)
 	input.Atomics[0].ByteOffset = 1
-	bad, err = paragraph.Prepare(t.Context(), input, khipu.PrepareOptions{}, synthetic())
+	bad, err := paragraph.Prepare(input, khipu.PrepareOptions{}, synthetic())
 	requireStage(t, bad, err, paragraph.StagePrepare, khipu.ErrIllegalArguments)
 	input.Atomics[0].ByteOffset = 0
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	out, err = p.Layout(ctx, request)
-	requireStage(t, out, err, paragraph.StageInput, context.Canceled)
-	out, err = p.Layout(nil, request)
-	requireStage(t, out, err, paragraph.StageInput, khipu.ErrIllegalArguments)
 	var nilPrepared *paragraph.Prepared
-	out, err = nilPrepared.Layout(t.Context(), request)
+	out, err = nilPrepared.Layout(request)
 	requireStage(t, out, err, paragraph.StageInput, khipu.ErrIllegalArguments)
-	out, err = new(paragraph.Prepared).Layout(t.Context(), request)
+	out, err = new(paragraph.Prepared).Layout(request)
 	requireStage(t, out, err, paragraph.StageInput, khipu.ErrIllegalArguments)
 	for _, change := range []func(*paragraph.LayoutRequest){
 		func(r *paragraph.LayoutRequest) { r.Atomics = nil },
@@ -292,7 +282,7 @@ func TestPreparedStageErrorsAndRecovery(t *testing.T) {
 		r := request
 		r.Atomics = slices.Clone(request.Atomics)
 		change(&r)
-		out, err = p.Layout(t.Context(), r)
+		out, err = p.Layout(r)
 		requireStage(t, out, err, paragraph.StageBind, khipu.ErrIllegalArguments)
 	}
 	for _, change := range []func(*paragraph.LayoutRequest){
@@ -304,24 +294,20 @@ func TestPreparedStageErrorsAndRecovery(t *testing.T) {
 	} {
 		r := request
 		change(&r)
-		out, err = p.Layout(t.Context(), r)
+		out, err = p.Layout(r)
 		requireStage(t, out, err, paragraph.StageInput, khipu.ErrIllegalArguments)
 	}
 	negative := request
 	negative.Atomics = []paragraph.AtomicBox{atomicBox(1, 0, 0)}
 	negative.Atomics[0].Margin.Left = -dimen.BP
-	out, err = p.Layout(t.Context(), negative)
+	out, err = p.Layout(negative)
 	requireStage(t, out, err, paragraph.StageFreeze, khipu.ErrUnsupportedPolicy)
 	sentinel := errors.New("backend failed")
 	cfg := synthetic()
 	cfg.Streaming.NewShaper = func() (contracts.StreamingShaper, error) { return nil, sentinel }
-	bad, err = paragraph.Prepare(t.Context(), input, khipu.PrepareOptions{}, cfg)
+	bad, err = paragraph.Prepare(input, khipu.PrepareOptions{}, cfg)
 	requireStage(t, bad, err, paragraph.StagePrepare, sentinel)
-	ctx, cancel = context.WithCancel(t.Context())
-	input.Markup = func(uint64) int { cancel(); return 0 }
-	bad, err = paragraph.Prepare(ctx, input, khipu.PrepareOptions{}, synthetic())
-	requireStage(t, bad, err, paragraph.StageParagraph, context.Canceled)
-	out, err = p.Layout(t.Context(), request)
+	out, err = p.Layout(request)
 	if err != nil || len(out.VList.AtomicPlacements()) != 1 {
 		t.Fatal("preparation unusable after failed layouts", out, err)
 	}
@@ -331,14 +317,14 @@ func TestPreparedAtomicNegativeExtentsAndFiniteBounds(t *testing.T) {
 	for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
 		cfg := synthetic()
 		cfg.Streaming.Defaults.Font = asymmetricFont{cfg.Streaming.Defaults.Font}
-		p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString("\uFFFC"), Atomics: []contracts.AtomicAnchor{{ID: 1}}}, khipu.PrepareOptions{}, cfg)
+		p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString("\uFFFC"), Atomics: []contracts.AtomicAnchor{{ID: 1}}}, khipu.PrepareOptions{}, cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
 		box := atomicBox(1, 0, 0)
 		box.Margin.Top = -dimen.BP
 		request := paragraph.LayoutRequest{Params: cssParams(breaker, factor(0)), Atomics: []paragraph.AtomicBox{box}}
-		out, err := p.Layout(t.Context(), request)
+		out, err := p.Layout(request)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -352,13 +338,13 @@ func TestPreparedAtomicNegativeExtentsAndFiniteBounds(t *testing.T) {
 		box = atomicBox(1, 1, 1)
 		box.Margin.Left, box.Margin.Right = dimen.Fil-1, -(dimen.Fil - 1)
 		request.Atomics = []paragraph.AtomicBox{box}
-		out, err = p.Layout(t.Context(), request)
+		out, err = p.Layout(request)
 		requireStage(t, out, err, paragraph.StageAssemble, khipu.ErrIllegalArguments) // Published X overflows; advance is only 1bp.
 		request.Horizontal = &paragraph.HorizontalLayout{}
 		request.Atomics[0].BorderWidth = dimen.Fil - 1
 		// Intermediate border+left exceeds int32, but the right margin brings
 		// the completed advance back into the finite domain. Border X is legal.
-		out, err = p.Layout(t.Context(), request)
+		out, err = p.Layout(request)
 		if err != nil || out.VList.AtomicPlacements()[0].X != (dimen.Fil-1).Points() {
 			t.Fatal(out, err)
 		}
@@ -376,42 +362,43 @@ func TestPreparedBreakFailureAndRecovery(t *testing.T) {
 		sentinel := errors.New("discretionary provider failed")
 		cfg := synthetic()
 		cfg.Hyphenator = failingDiscretionaries{sentinel}
-		p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString("ab\u00adcd")}, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
+		p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString("ab\u00adcd")}, khipu.PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}, cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
 		request := paragraph.LayoutRequest{Params: params(breaker, 100*dimen.BP)}
-		first, err := p.Layout(t.Context(), request)
+		first, err := p.Layout(request)
 		if err != nil {
 			t.Fatal(err)
 		}
 		before := first.VList.Lines()
 		request.Params.Constraints.Width = 15 * dimen.BP
-		out, err := p.Layout(t.Context(), request)
+		out, err := p.Layout(request)
 		requireStage(t, out, err, paragraph.StageBreak, sentinel)
 		request.Params.Constraints.Width = 100 * dimen.BP
-		out, err = p.Layout(t.Context(), request)
+		out, err = p.Layout(request)
 		if err != nil || !reflect.DeepEqual(before, out.VList.Lines()) || !reflect.DeepEqual(before, first.VList.Lines()) {
 			t.Fatal("failed binding contaminated preparation", err)
 		}
 	}
 }
 
-func TestPreparedAssemblyCancellationAndMultipleLines(t *testing.T) {
+func TestPreparedAssemblyFailureAndMultipleLines(t *testing.T) {
 	for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
 		cfg := synthetic()
-		ctx, cancel := context.WithCancel(t.Context())
-		cfg.Streaming.Defaults.Font = cancelFont{FontFace: cfg.Streaming.Defaults.Font, cancel: cancel}
-		p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString("\uFFFC\uFFFC"), Atomics: []contracts.AtomicAnchor{{ID: 8}, {ID: 3, ByteOffset: 3}}}, khipu.PrepareOptions{}, cfg)
+		failedMetrics := true
+		failure := errors.New("metrics unavailable")
+		cfg.Streaming.Defaults.Font = failureFont{FontFace: cfg.Streaming.Defaults.Font, failed: &failedMetrics, failure: failure}
+		p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString("\uFFFC\uFFFC"), Atomics: []contracts.AtomicAnchor{{ID: 8}, {ID: 3, ByteOffset: 3}}}, khipu.PrepareOptions{}, cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
 		request := paragraph.LayoutRequest{Params: mixedParams(breaker, 10*dimen.BP), Horizontal: &paragraph.HorizontalLayout{}, Atomics: []paragraph.AtomicBox{atomicBox(3, 10, 20), atomicBox(8, 10, 10)}}
-		out, err := p.Layout(ctx, request)
-		requireStage(t, out, err, paragraph.StageAssemble, context.Canceled)
-		// The font keeps cancelling only the previous request's context. A new
-		// request must succeed without reshaping or retaining the failed vlist.
-		out, err = p.Layout(t.Context(), request)
+		out, err := p.Layout(request)
+		requireStage(t, out, err, paragraph.StageAssemble, failure)
+		// A repaired service permits retry without reshaping or retaining a failed vlist.
+		failedMetrics = false
+		out, err = p.Layout(request)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -425,7 +412,7 @@ func TestPreparedAssemblyCancellationAndMultipleLines(t *testing.T) {
 		}
 		request.Atomics[0].BorderHeight = dimen.Fil / 2
 		request.Atomics[1].BorderHeight = dimen.Fil / 2
-		failed, err := p.Layout(t.Context(), request)
+		failed, err := p.Layout(request)
 		requireStage(t, failed, err, paragraph.StageAssemble, khipu.ErrIllegalArguments)
 		if !reflect.DeepEqual(out.VList.Lines(), lines) {
 			t.Fatal("failed assembly changed retained result")
@@ -435,17 +422,17 @@ func TestPreparedAssemblyCancellationAndMultipleLines(t *testing.T) {
 
 func TestPreparedExplicitZeroSkips(t *testing.T) {
 	for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
-		p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString("aa aa aa")}, khipu.PrepareOptions{}, synthetic())
+		p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString("aa aa aa")}, khipu.PrepareOptions{}, synthetic())
 		if err != nil {
 			t.Fatal(err)
 		}
 		request := paragraph.LayoutRequest{Params: params(breaker, 30*dimen.BP)}
-		profile, err := p.Layout(t.Context(), request)
+		profile, err := p.Layout(request)
 		if err != nil {
 			t.Fatal(err)
 		}
 		request.Horizontal = &paragraph.HorizontalLayout{}
-		explicit, err := p.Layout(t.Context(), request)
+		explicit, err := p.Layout(request)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -460,13 +447,13 @@ func TestPreparedExplicitZeroSkips(t *testing.T) {
 func TestPreparedMultibyteMixedDirectionCoordinates(t *testing.T) {
 	const source = "éa\uFFFCfiאב"
 	for _, direction := range []bidi.Direction{bidi.LeftToRight, bidi.RightToLeft} {
-		p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString(source), Direction: direction, Atomics: []contracts.AtomicAnchor{{ID: 7, ByteOffset: 3}}}, khipu.PrepareOptions{}, synthetic())
+		p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString(source), Direction: direction, Atomics: []contracts.AtomicAnchor{{ID: 7, ByteOffset: 3}}}, khipu.PrepareOptions{}, synthetic())
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
 			for _, width := range []dimen.DU{100 * dimen.BP, 5 * dimen.BP} {
-				out, err := p.Layout(t.Context(), paragraph.LayoutRequest{Params: mixedParams(breaker, width), Atomics: []paragraph.AtomicBox{atomicBox(7, 4, 8)}})
+				out, err := p.Layout(paragraph.LayoutRequest{Params: mixedParams(breaker, width), Atomics: []paragraph.AtomicBox{atomicBox(7, 4, 8)}})
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -67,24 +67,24 @@ func fragmentRenderFixture(t *testing.T, width dimen.DU) (render.ParagraphInput,
 			return sealedStream{stream{s}, &sealed}, err
 		},
 	}}
-	p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString(text)}, khipu.PrepareOptions{}, config)
+	p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString(text)}, khipu.PrepareOptions{}, config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	req := paragraph.LayoutRequest{Params: paragraph.Params{Constraints: paragraph.Constraints{Width: 40 * dimen.BP}, Breaker: paragraph.FirstFit, Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight}, LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.FactorHeight, Factor: 1}}}, Horizontal: &paragraph.HorizontalLayout{}}
-	full, err := p.Layout(t.Context(), req)
+	full, err := p.Layout(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := p.StartFlow(t.Context(), req)
+	c, err := p.StartFlow(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := c.Fit(t.Context(), paragraph.Frame{Width: 40 * dimen.BP, Height: 10})
+	a, err := c.Fit(paragraph.Frame{Width: 40 * dimen.BP, Height: 10})
 	if err != nil || a.Continuation == nil {
 		t.Fatal("first frame", err)
 	}
-	b, err := a.Continuation.Fit(t.Context(), paragraph.Frame{Width: width * dimen.BP, Height: 1000})
+	b, err := a.Continuation.Fit(paragraph.Frame{Width: width * dimen.BP, Height: 1000})
 	if err != nil || b.Continuation != nil {
 		t.Fatal("completion", err)
 	}
@@ -103,14 +103,14 @@ func TestFragmentProofFlowAndCollectedPreparation(t *testing.T) {
 		}
 		b := &orderCounter{}
 		services := render.Services{Backend: b, Identity: b}
-		full, err := render.BuildParagraphProof(t.Context(), input, services)
+		full, err := render.BuildParagraphProof(input, services)
 		if err != nil {
 			t.Fatal(err)
 		}
 		glyphCount := 0
 		for i, f := range fragments {
 			b.orders = 0
-			proof, err := render.BuildFragmentProof(t.Context(), render.FragmentInput{Fragment: f, Text: input.Text, Paint: input.Paint}, services)
+			proof, err := render.BuildFragmentProof(render.FragmentInput{Fragment: f, Text: input.Text, Paint: input.Paint}, services)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -157,7 +157,7 @@ func TestFragmentProofFlowAndCollectedPreparation(t *testing.T) {
 			}
 			original := *proof
 			proof.Glyphs = nil
-			again, err := render.BuildFragmentProof(t.Context(), render.FragmentInput{Fragment: f, Text: input.Text, Paint: input.Paint}, services)
+			again, err := render.BuildFragmentProof(render.FragmentInput{Fragment: f, Text: input.Text, Paint: input.Paint}, services)
 			if err != nil || !reflect.DeepEqual(&original, again) {
 				t.Fatal("render changed retained output", err)
 			}
@@ -174,53 +174,43 @@ func TestFragmentProofFlowAndCollectedPreparation(t *testing.T) {
 
 func TestFragmentProofBidiEmptyAndFailures(t *testing.T) {
 	input, face := proofInput(t)
-	f, err := paragraph.Fragment(t.Context(), input.VList)
+	f, err := paragraph.Fragment(input.VList)
 	if err != nil {
 		t.Fatal(err)
 	}
 	face.deny = true
 	b := &backend{}
 	services := render.Services{Backend: b, Identity: b}
-	want, err := render.BuildParagraphProof(t.Context(), input, services)
+	want, err := render.BuildParagraphProof(input, services)
 	if err != nil {
 		t.Fatal(err)
 	}
 	arg := render.FragmentInput{Fragment: f, Text: input.Text, Paint: input.Paint}
-	got, err := render.BuildFragmentProof(t.Context(), arg, services)
+	got, err := render.BuildFragmentProof(arg, services)
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatal("bidi/paint changed", err)
 	}
-	empty, err := layout.NewFragment(t.Context(), f.Frozen(), layout.LineRange{}, layout.Box{}, nil, nil, nil)
+	empty, err := layout.NewFragment(f.Frozen(), layout.LineRange{}, layout.Box{}, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	b.calls = 0
-	p, err := render.BuildFragmentProof(t.Context(), render.FragmentInput{Fragment: empty, Text: input.Text}, services)
+	p, err := render.BuildFragmentProof(render.FragmentInput{Fragment: empty, Text: input.Text}, services)
 	if err != nil || len(p.Lines) != 0 || len(p.Glyphs) != 0 || b.calls != 0 {
 		t.Fatal("empty fragment rendered owner", err)
 	}
 	sentinel := errors.New("late outline")
-	for _, cancelled := range []bool{false, true} {
-		ctx, cancel := context.WithCancel(t.Context())
+	{
 		b := &backend{fail: sentinel}
 		want := sentinel
-		if cancelled {
-			b.fail = nil
-			b.cancel = cancel
-			want = context.Canceled
-		}
-		p, err := render.BuildFragmentProof(ctx, arg, render.Services{Backend: b, Identity: b})
-		cancel()
+		p, err := render.BuildFragmentProof(arg, render.Services{Backend: b, Identity: b})
 		if p != nil || !errors.Is(err, want) || b.calls != 2 {
 			t.Fatal("late failure published proof", p, err, b.calls)
 		}
 	}
 	for _, f := range []*layout.Fragment{nil, {}} {
-		if p, err := render.BuildFragmentProof(t.Context(), render.FragmentInput{Fragment: f}, services); p != nil || err == nil {
+		if p, err := render.BuildFragmentProof(render.FragmentInput{Fragment: f}, services); p != nil || err == nil {
 			t.Fatal("invalid fragment accepted")
 		}
-	}
-	if p, err := render.BuildFragmentProof(nil, arg, services); p != nil || err == nil {
-		t.Fatal("nil context accepted")
 	}
 }

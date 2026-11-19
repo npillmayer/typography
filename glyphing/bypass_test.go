@@ -1,7 +1,6 @@
 package glyphing_test
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -53,7 +52,7 @@ func TestRenderingBypassProjection(t *testing.T) {
 				t.Fatalf("projection lost typography: %+v %v", resolved, err)
 			}
 		}
-		text, bindings, err := r.Itemize(context.Background(), "fi", spans)
+		text, bindings, err := r.Itemize("fi", spans)
 		if err != nil || len(bindings) != want {
 			t.Fatalf("itemization: %+v %v", bindings, err)
 		}
@@ -68,7 +67,7 @@ func TestRenderingBypassProjection(t *testing.T) {
 
 	// Identical source styles also coalesce.
 	spans[1].Style = red
-	_, bindings, err := r.Itemize(context.Background(), "fi", spans)
+	_, bindings, err := r.Itemize("fi", spans)
 	if err != nil || len(bindings) != 1 {
 		t.Fatalf("identical styles split: %+v %v", bindings, err)
 	}

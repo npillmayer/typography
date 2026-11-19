@@ -1,7 +1,6 @@
 package layout
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"slices"
@@ -58,16 +57,11 @@ func (f *Fragment) AtomicPlacements() []AtomicPlacement { return slices.Clone(f.
 // Geometry identities allow 1e-9 big points of rounding error from rebasing;
 // finite-domain checks are strict. No geometry is normalized or repaired.
 // Cancellation or invalid input returns no fragment.
-func NewFragment(ctx context.Context, frozen *khipu.FrozenKhipu, span LineRange, box Box, lines []FragmentLine, materials []Material, atomics []AtomicPlacement) (*Fragment, error) {
+func NewFragment(frozen *khipu.FrozenKhipu, span LineRange, box Box, lines []FragmentLine, materials []Material, atomics []AtomicPlacement) (*Fragment, error) {
 	bad := func() (*Fragment, error) {
 		return nil, fmt.Errorf("%w: invalid completed fragment", contracts.ErrIllegalArguments)
 	}
-	if ctx == nil {
-		return bad()
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+
 	if frozen == nil || span.Start < 0 || span.End < span.Start || span.End > frozen.LineCount() || len(lines) != span.End-span.Start {
 		return bad()
 	}
@@ -84,9 +78,6 @@ func NewFragment(ctx context.Context, frozen *khipu.FrozenKhipu, span LineRange,
 	mi, ai := 0, 0
 	end, width, previousTop := 0.0, 0.0, 0.0
 	for i, l := range lines {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		h, ok := frozen.Line(span.Start + i)
 		if !ok || l.Index != i || l.OriginalIndex != span.Start+i || l.Horizontal != h || l.X != 0 || h.Width < 0 || h.TargetWidth < 0 {
 			return bad()
@@ -116,9 +107,6 @@ func NewFragment(ctx context.Context, frozen *khipu.FrozenKhipu, span LineRange,
 		previousTop = m.Top
 		width = math.Max(width, math.Max(h.Width.Points(), h.TargetWidth.Points()))
 		for k := h.FirstKnot; k < h.FirstKnot+h.KnotCount; k++ {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
 			if id, ok := frozen.Atomic(k); ok {
 				if ai >= len(atomics) {
 					return bad()
@@ -134,13 +122,9 @@ func NewFragment(ctx context.Context, frozen *khipu.FrozenKhipu, span LineRange,
 	if !nonnegative(width) || mi != len(materials) || ai != len(atomics) || !closeGeometry(box.Extent, end) || !closeGeometry(box.Width, width) {
 		return bad()
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+
 	result := &Fragment{frozen: frozen, span: span, box: box, lines: slices.Clone(lines), materials: slices.Clone(materials), atomics: slices.Clone(atomics)}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+
 	return result, nil
 }
 

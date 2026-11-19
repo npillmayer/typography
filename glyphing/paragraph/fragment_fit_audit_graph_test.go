@@ -14,12 +14,12 @@ const paragraphPath = "github.com/npillmayer/typography/glyphing/paragraph"
 const layoutPath = "github.com/npillmayer/typography/layout"
 const khipuPath = "github.com/npillmayer/khipu"
 
-// The only opaque leaves are standard pure operations and context.Err.
+// The only opaque leaves are standard pure operations.
 // Project methods below are identified by declaring package and receiver, then
 // their bodies are inspected recursively, including private helpers in any file.
 var auditLeaves = map[string]bool{
 	"errors.New": true, "fmt.Errorf": true, "math.Abs": true, "math.IsNaN": true,
-	"math.IsInf": true, "math.Max": true, "slices.Clone": true, "(context.Context).Err": true,
+	"math.IsInf": true, "math.Max": true, "slices.Clone": true,
 }
 
 var auditEntries = map[string]bool{
@@ -49,7 +49,7 @@ func auditGeometry(w *auditWorld) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	imports := map[string]bool{"context": true, "errors": true, "fmt": true, "math": true,
+	imports := map[string]bool{"errors": true, "fmt": true, "math": true,
 		khipuPath + "/contracts": true, khipuPath + "/dimen": true, layoutPath: true, paragraphPath: true}
 	// Audit the complete fit implementation and recursively inspect delegated bodies.
 	// Other paragraph entry points deliberately perform shaping/breaking.

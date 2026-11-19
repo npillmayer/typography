@@ -1,10 +1,19 @@
 # render
 
+Context policy (2026-11-19): typesetting, geometry, retained proofs, replay,
+and document execution are synchronous and have no context argument. Contexts
+are confined to streaming coordination and font discovery/loading. Streaming
+callers create a local background context; consumer failure still cancels and
+joins the producer before cleanup. Errors publish no partial result and preserve
+previous immutable output. TUI layout jobs finish serially; stale results are
+discarded, while font work remains cancellable. This supersedes earlier
+cancellation requirements for typesetting in this document.
+
 Retained paragraph proofs and paint-source mapping through neutral services.
 There is no glyphing dependency.
 
     drawing := renderot.New() // render/adapter/opentype
-    proof, err := render.BuildParagraphProof(ctx, render.ParagraphInput{
+    proof, err := render.BuildParagraphProof(render.ParagraphInput{
         Frozen: result.Frozen, VList: result.VList,
         Text: processedText, Paint: style.ProjectPaint(spans),
     }, render.Services{Backend: drawing, Identity: drawing})
@@ -13,7 +22,7 @@ BuildParagraphProof consumes layout.VList and matching frozen content. It never
 queries line metrics, reshapes, rebreaks or restacks. Outline parsers can lazily
 read retained bytes, never discover fonts or reopen original files.
 
-`BuildFragmentProof(ctx, FragmentInput{Fragment: fragment, Text: processedText,
+`BuildFragmentProof(FragmentInput{Fragment: fragment, Text: processedText,
 Paint: paint}, services)` uses the same retained walker for just that fragment's
 line range. Text and paint still address the complete original paragraph.
 Horizontal records come from `FragmentLine.OriginalIndex`; vertical coordinates

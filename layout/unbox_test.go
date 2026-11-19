@@ -45,7 +45,7 @@ func TestUnboxFullLineHeightAndEmptyOutput(t *testing.T) {
 			{"", 1, 0, 0, 0},
 		} {
 			for _, width := range []dimen.DU{0, 40 * dimen.BP} {
-				r, err := paragraph.Run(t.Context(), paragraph.Input{Text: styled.TextFromString(tc.text)}, unboxParams(breaker, width, tc.factor), unboxConfig())
+				r, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString(tc.text)}, unboxParams(breaker, width, tc.factor), unboxConfig())
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -96,7 +96,7 @@ func TestUnboxFullLineHeightAndEmptyOutput(t *testing.T) {
 }
 
 func TestUnboxLocalDepthDomain(t *testing.T) {
-	r, err := paragraph.Run(t.Context(), paragraph.Input{Text: styled.TextFromString("aa\naa")},
+	r, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("aa\naa")},
 		unboxParams(paragraph.FirstFit, 40*dimen.BP, 1), unboxConfig())
 	if err != nil {
 		t.Fatal(err)
@@ -161,14 +161,14 @@ func TestUnboxLocalDepthDomain(t *testing.T) {
 
 func unboxAtomicFixture(t *testing.T, direction bidi.Direction) *layout.VList {
 	t.Helper()
-	p, err := paragraph.Prepare(t.Context(), paragraph.Input{
+	p, err := paragraph.Prepare(paragraph.Input{
 		Text: styled.TextFromString("\uFFFC\uFFFC\naa\n\uFFFC"), Direction: direction,
 		Atomics: []contracts.AtomicAnchor{{ID: 7, ByteOffset: 0}, {ID: 2, ByteOffset: 3}, {ID: 9, ByteOffset: 10}},
 	}, khipu.PrepareOptions{}, unboxConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := p.Layout(t.Context(), paragraph.LayoutRequest{
+	r, err := p.Layout(paragraph.LayoutRequest{
 		Params: unboxParams(paragraph.FirstFit, 40*dimen.BP, 1),
 		Atomics: []paragraph.AtomicBox{
 			{ID: 7, Margin: paragraph.AtomicMargins{Right: -2 * dimen.BP}, Alignment: paragraph.AlignBottomMarginEdge},

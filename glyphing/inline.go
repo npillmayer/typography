@@ -1,7 +1,6 @@
 package glyphing
 
 import (
-	"context"
 	"fmt"
 	"unicode/utf8"
 
@@ -26,25 +25,20 @@ import (
 // ordinary text uses the existing itemizer's coverage/fallback behavior, pending
 // its separate relocation. Attached markers bypass style resolution and coverage.
 // With no anchors this delegates to Itemize for text-only compatibility.
-func (r *StyleMapper) ItemizeInline(ctx context.Context, text string, spans []typestyle.Span,
+func (r *StyleMapper) ItemizeInline(text string, spans []typestyle.Span,
 	atomics []contracts.AtomicAnchor) (styled.Text, []FontTextRun, error) {
 	if !utf8.ValidString(text) {
 		return styled.TextFromString(""), nil, fmt.Errorf("%w: invalid UTF-8", contracts.ErrIllegalArguments)
 	}
 	if len(atomics) == 0 {
-		out, bindings, err := r.Itemize(ctx, text, spans)
+		out, bindings, err := r.Itemize(text, spans)
 		if err != nil {
 			return styled.TextFromString(text), nil, err
 		}
 		return out, bindings, nil
 	}
 	out := styled.TextFromString(text)
-	if ctx == nil {
-		return out, nil, fmt.Errorf("%w: nil itemization context", contracts.ErrIllegalArguments)
-	}
-	if err := ctx.Err(); err != nil {
-		return out, nil, err
-	}
+
 	if r == nil {
 		return out, nil, fmt.Errorf("%w: nil resolver", contracts.ErrIllegalArguments)
 	}
@@ -55,11 +49,11 @@ func (r *StyleMapper) ItemizeInline(ctx context.Context, text string, spans []ty
 	if err := validateAtomicAnchors(text, atomics); err != nil {
 		return out, nil, err
 	}
-	projected, err := r.projectInlineSpans(ctx, text, spans, atomics)
+	projected, err := r.projectInlineSpans(text, spans, atomics)
 	if err != nil {
 		return out, nil, err
 	}
-	result, bindings, err := r.itemizeSpans(ctx, text, projected, spans == nil)
+	result, bindings, err := r.itemizeSpans(text, projected, spans == nil)
 	if err != nil {
 		return out, nil, err
 	}
@@ -84,7 +78,7 @@ func validateAtomicAnchors(text string, atomics []contracts.AtomicAnchor) error 
 // with text prevents object-only styles from requiring a usable font/language.
 // Coalescing follows the same shaping/paint rules as ProjectStyles; a skipped
 // object-only span is a barrier, never a bridge between unrelated domains.
-func (r *StyleMapper) projectInlineSpans(ctx context.Context, text string, spans []typestyle.Span, atomics []contracts.AtomicAnchor) ([]itemizationSpan, error) {
+func (r *StyleMapper) projectInlineSpans(text string, spans []typestyle.Span, atomics []contracts.AtomicAnchor) ([]itemizationSpan, error) {
 	var groups []TypographySpan
 	if spans == nil {
 		groups = []TypographySpan{{Start: 0, End: uint64(len(text))}}
@@ -93,9 +87,6 @@ func (r *StyleMapper) projectInlineSpans(ctx context.Context, text string, spans
 		var previousStyle typestyle.Style
 		ai := 0
 		for _, span := range spans {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
 			for ai < len(atomics) && atomics[ai].ByteOffset < span.Start {
 				ai++
 			}
@@ -125,9 +116,6 @@ func (r *StyleMapper) projectInlineSpans(ctx context.Context, text string, spans
 	var result []itemizationSpan
 	ai := 0
 	for _, group := range groups {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		window := featureWindow{active: true, domainStart: group.Start, domainEnd: group.End}
 		from := group.Start
 		for ai < len(atomics) && atomics[ai].ByteOffset < from {

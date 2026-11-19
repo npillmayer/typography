@@ -1,7 +1,6 @@
 package paragraph_test
 
 import (
-	"context"
 	"errors"
 	"math"
 	"reflect"
@@ -15,7 +14,7 @@ import (
 
 func TestFitFragmentDirect(t *testing.T) {
 	v, key, _ := fitFixture(t, fitTextInput("aa\naa\naa"), paragraph.FirstFit, 40*dimen.BP, 1, nil)
-	f, err := paragraph.Fragment(t.Context(), v)
+	f, err := paragraph.Fragment(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +27,7 @@ func TestFitFragmentDirect(t *testing.T) {
 		{0, 0, paragraph.FitNoProgress}, {math.Nextafter(10, 0), 0, paragraph.FitNoProgress},
 		{10, 1, paragraph.FitContinues}, {30, 3, paragraph.FitComplete},
 	} {
-		out, err := paragraph.FitFragment(t.Context(), f, k, k, tc.height)
+		out, err := paragraph.FitFragment(f, k, k, tc.height)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -37,7 +36,7 @@ func TestFitFragmentDirect(t *testing.T) {
 		}
 	}
 	for _, bad := range []*layout.Fragment{nil, new(layout.Fragment)} {
-		out, err := paragraph.FitFragment(t.Context(), bad, k, k, 10)
+		out, err := paragraph.FitFragment(bad, k, k, 10)
 		if out != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 			t.Fatal(out, err)
 		}
@@ -45,32 +44,21 @@ func TestFitFragmentDirect(t *testing.T) {
 	for _, field := range []string{"Source", "Styles", "Fonts", "LineHeight", "Atomics", "Policy"} {
 		bad := k
 		reflect.ValueOf(&bad).Elem().FieldByName(field).SetUint(0)
-		out, err := paragraph.FitFragment(t.Context(), f, bad, bad, 10)
+		out, err := paragraph.FitFragment(f, bad, bad, 10)
 		if out != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 			t.Fatal(field, out, err)
-		}
-	}
-	probe := &fitExpiringContext{Context: t.Context()}
-	if _, err := paragraph.FitFragment(probe, f, k, k, 10); err != nil {
-		t.Fatal(err)
-	}
-	// Every observed cancellation point, including late validation/publication.
-	for i := 1; i <= probe.calls; i++ {
-		out, err := paragraph.FitFragment(&fitExpiringContext{Context: t.Context(), limit: i}, f, k, k, 10)
-		if out != nil || !errors.Is(err, context.Canceled) {
-			t.Fatal(i, out, err)
 		}
 	}
 	// Consume the same frozen owner over three calls; completed output holds no
 	// prepared handle. Each range and each copy of diagnostics is independent.
 	for i := 0; i < 3; i++ {
-		out, err := paragraph.FitFragment(t.Context(), f, k, k, 10)
+		out, err := paragraph.FitFragment(f, k, k, 10)
 		if err != nil || out.Placed.Range() != (layout.LineRange{Start: i, End: i + 1}) {
 			t.Fatal(out, err)
 		}
 		f = out.Remainder
 	}
-	out, err := paragraph.FitFragment(t.Context(), f, k, k, 0)
+	out, err := paragraph.FitFragment(f, k, k, 0)
 	if err != nil || out.Status != paragraph.FitComplete || out.Placed.Range() != (layout.LineRange{Start: 3, End: 3}) {
 		t.Fatal(out, err)
 	}
@@ -78,18 +66,18 @@ func TestFitFragmentDirect(t *testing.T) {
 
 func TestFitRetainedExtentMustFitStrictly(t *testing.T) {
 	v, key, _ := fitFixture(t, fitTextInput("aa"), paragraph.FirstFit, 40*dimen.BP, 1, nil)
-	f, err := paragraph.Fragment(t.Context(), v)
+	f, err := paragraph.Fragment(v)
 	if err != nil {
 		t.Fatal(err)
 	}
 	box := f.Box()
 	box.Extent += 5e-10 // Legal arithmetic discrepancy, not permission to overflow.
-	f, err = layout.NewFragment(t.Context(), f.Frozen(), f.Range(), box, f.Lines(), f.Materials(), nil)
+	f, err = layout.NewFragment(f.Frozen(), f.Range(), box, f.Lines(), f.Materials(), nil)
 	if err != nil {
 		t.Fatal("constructor tolerance changed", err)
 	}
 	for _, h := range []float64{10, box.Extent} {
-		out, err := paragraph.FitFragment(t.Context(), f, key.public(), key.public(), h)
+		out, err := paragraph.FitFragment(f, key.public(), key.public(), h)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -112,7 +100,7 @@ func TestFitDoesNotHideOutOfDomainInputDepth(t *testing.T) {
 	lines[0].Descent = 100 - lines[0].Ascent
 	lines[0].Baseline = lines[0].Ascent
 	box.Baseline, box.Extent = lines[0].Baseline, 200
-	f, err := layout.NewFragment(t.Context(), v.Frozen(), layout.LineRange{End: 2}, box, []layout.FragmentLine{
+	f, err := layout.NewFragment(v.Frozen(), layout.LineRange{End: 2}, box, []layout.FragmentLine{
 		{Line: lines[0], OriginalIndex: 0}, {Line: lines[1], OriginalIndex: 1},
 	}, mats, nil)
 	if err != nil {
@@ -120,7 +108,7 @@ func TestFitDoesNotHideOutOfDomainInputDepth(t *testing.T) {
 	}
 	// Both split boxes have bounded depths; the source box's derived depth
 	// exceeds Fil. Cutting must not silently conceal that invalid input.
-	out, err := paragraph.FitFragment(t.Context(), f, key.public(), key.public(), 100)
+	out, err := paragraph.FitFragment(f, key.public(), key.public(), 100)
 	if out != nil || !errors.Is(err, contracts.ErrIllegalArguments) {
 		t.Fatal(out, err)
 	}

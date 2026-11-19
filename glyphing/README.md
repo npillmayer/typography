@@ -1,5 +1,14 @@
 # Glyphing
 
+Context policy (2026-11-19): typesetting, geometry, retained proofs, replay,
+and document execution are synchronous and have no context argument. Contexts
+are confined to streaming coordination and font discovery/loading. Streaming
+callers create a local background context; consumer failure still cancels and
+joins the producer before cleanup. Errors publish no partial result and preserve
+previous immutable output. TUI layout jobs finish serially; stale results are
+discarded, while font work remains cancellable. This supersedes earlier
+cancellation requirements for typesetting in this document.
+
 A typesetter translates styled text input into glyphs, i.e. graphic representations
 of letters, ligatures, etc.  This translation is called "glyphing". This package
 will map styles (e.g. *italic*) to fonts (e.g. an oblique font face). And it
@@ -10,7 +19,7 @@ loads/discovers fonts nor does it install a text-shaper, and has no rendering de
 
 ## Select Fonts and map Styles
 
-`NewStyleMapper(ctx, selectedFonts, coverage)` accepts a closed `SelectedFonts`
+`NewStyleMapper(selectedFonts, coverage)` accepts a closed `SelectedFonts`
 table: exactly one `FaceEntry` per referenced resource ID, with no missing,
 duplicate or unreferenced entries. References include the default, ordered style
 rules and explicit fallbacks, even when the current text never uses them.

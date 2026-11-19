@@ -1,7 +1,6 @@
 package paragraph_test
 
 import (
-	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -57,7 +56,7 @@ func TestPreparedMeasureReuseAndRetainedResults(t *testing.T) {
 		t.Run(string(breaker), func(t *testing.T) {
 			var calls measurementCalls
 			input := paragraph.Input{Text: styled.TextFromString("éa \uFFFC fi"), Atomics: []contracts.AtomicAnchor{{ID: 7, ByteOffset: 4}}}
-			p, err := paragraph.Prepare(t.Context(), input, khipu.PrepareOptions{}, measurementConfig(&calls))
+			p, err := paragraph.Prepare(input, khipu.PrepareOptions{}, measurementConfig(&calls))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -70,7 +69,7 @@ func TestPreparedMeasureReuseAndRetainedResults(t *testing.T) {
 			measure := func() khipu.IntrinsicWidths {
 				t.Helper()
 				before := calls
-				got, err := p.MeasureIntrinsic(t.Context(), request)
+				got, err := p.MeasureIntrinsic(request)
 				if err != nil || got != want {
 					t.Fatalf("measure = %v, %v; want %v", got, err, want)
 				}
@@ -83,7 +82,7 @@ func TestPreparedMeasureReuseAndRetainedResults(t *testing.T) {
 			measure()
 			var verify []func()
 			for _, width := range []dimen.DU{100 * dimen.BP, 20 * dimen.BP} {
-				out, err := p.Layout(t.Context(), paragraph.LayoutRequest{
+				out, err := p.Layout(paragraph.LayoutRequest{
 					Params: mixedParams(breaker, width), Horizontal: &paragraph.HorizontalLayout{},
 					Atomics: []paragraph.AtomicBox{atomicBox(7, 20, 12)},
 				})
@@ -130,7 +129,7 @@ func TestPreparedMeasureReuseAndRetainedResults(t *testing.T) {
 				t.Fatal("retained widths changed")
 			}
 			request.Atomics[0].ID = 99
-			got, err := p.MeasureIntrinsic(t.Context(), request)
+			got, err := p.MeasureIntrinsic(request)
 			requireMeasureError(t, got, err, paragraph.StageMeasure, khipu.ErrIllegalArguments)
 			request.Atomics[0].ID = 7
 			measure()
@@ -152,65 +151,43 @@ func requireMeasureError(t *testing.T, got khipu.IntrinsicWidths, err error, sta
 	}
 }
 
-// Deterministically expire after entry, while the delegated evaluator is running.
-type measurementDeadline struct {
-	context.Context
-	remaining int
-}
-
-func (c *measurementDeadline) Err() error {
-	c.remaining--
-	if c.remaining <= 0 {
-		return context.DeadlineExceeded
-	}
-	return c.Context.Err()
-}
-
 func TestPreparedMeasureErrorsAndRecovery(t *testing.T) {
-	p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString("\uFFFC"), Atomics: []contracts.AtomicAnchor{{ID: 1}}}, khipu.PrepareOptions{}, synthetic())
+	p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString("\uFFFC"), Atomics: []contracts.AtomicAnchor{{ID: 1}}}, khipu.PrepareOptions{}, synthetic())
 	if err != nil {
 		t.Fatal(err)
 	}
 	valid := khipu.MeasureRequest{Atomics: []khipu.AtomicIntrinsic{{ID: 1, MinAdvance: -10, MaxAdvance: 20}}}
 	for _, bad := range []*paragraph.Prepared{nil, {}} {
-		got, err := bad.MeasureIntrinsic(t.Context(), valid)
+		got, err := bad.MeasureIntrinsic(valid)
 		requireMeasureError(t, got, err, paragraph.StageInput, khipu.ErrIllegalArguments)
 		if !errors.Is(err, paragraph.ErrInvalidInput) {
 			t.Fatal("lost paragraph input cause", err)
 		}
 	}
-	got, err := p.MeasureIntrinsic(nil, valid)
-	requireMeasureError(t, got, err, paragraph.StageInput, paragraph.ErrInvalidInput)
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	got, err = (*paragraph.Prepared)(nil).MeasureIntrinsic(ctx, valid)
-	requireMeasureError(t, got, err, paragraph.StageInput, context.Canceled)
-	got, err = p.MeasureIntrinsic(&measurementDeadline{Context: t.Context(), remaining: 5}, valid)
-	requireMeasureError(t, got, err, paragraph.StageMeasure, context.DeadlineExceeded)
 	for _, atoms := range [][]khipu.AtomicIntrinsic{
 		nil, {{ID: 0}}, {{ID: 2}}, {{ID: 1}, {ID: 1}}, {{ID: 1, MinAdvance: 20, MaxAdvance: 10}}, {{ID: 1, MaxAdvance: dimen.Fil}},
 	} {
-		got, err := p.MeasureIntrinsic(t.Context(), khipu.MeasureRequest{Atomics: atoms})
+		got, err := p.MeasureIntrinsic(khipu.MeasureRequest{Atomics: atoms})
 		requireMeasureError(t, got, err, paragraph.StageMeasure, khipu.ErrIllegalArguments)
 	}
-	got, err = p.MeasureIntrinsic(t.Context(), valid)
+	got, err := p.MeasureIntrinsic(valid)
 	if err != nil || got != (khipu.IntrinsicWidths{MaxContent: 20}) {
 		t.Fatal("retry or signed normalization failed", got, err)
 	}
 	for _, mode := range []khipu.HyphenationMode{khipu.AutomaticHyphenation} {
 		var calls measurementCalls
-		p, err := paragraph.Prepare(t.Context(), paragraph.Input{Text: styled.TextFromString("ab\u00adcd")}, khipu.PrepareOptions{Hyphenation: mode}, measurementConfig(&calls))
+		p, err := paragraph.Prepare(paragraph.Input{Text: styled.TextFromString("ab\u00adcd")}, khipu.PrepareOptions{Hyphenation: mode}, measurementConfig(&calls))
 		if err != nil {
 			t.Fatal(err)
 		}
 		before := calls
-		got, err := p.MeasureIntrinsic(t.Context(), khipu.MeasureRequest{})
+		got, err := p.MeasureIntrinsic(khipu.MeasureRequest{})
 		requireMeasureError(t, got, err, paragraph.StageMeasure, khipu.ErrUnsupportedPolicy)
 		if calls != before {
 			t.Fatal("unsupported measurement consulted services")
 		}
 		// Unsupported measurement must not poison an otherwise valid layout.
-		if _, err := p.Layout(t.Context(), paragraph.LayoutRequest{Params: params(paragraph.FirstFit, 100*dimen.BP)}); err != nil {
+		if _, err := p.Layout(paragraph.LayoutRequest{Params: params(paragraph.FirstFit, 100*dimen.BP)}); err != nil {
 			t.Fatal(err)
 		}
 	}
