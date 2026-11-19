@@ -5,34 +5,69 @@ This document explains the architecture behind
 and continuation contracts remain in [VLIST_CONTRACT.md](VLIST_CONTRACT.md) and
 [FLOW.md](FLOW.md); this overview does not replace them.
 
-## Responsibilities and data flow
+## A paragraph's career: HTML to VBox
+
+A paragraph evolves through **document structure → styled text → shaped
+horizontal material → broken lines → vertically positioned line boxes**.
+These are successive representations, not mutations of one object. Source
+mappings, paint and surrounding CSS geometry remain alongside the typesetting
+representations.
+
+The finished paragraph “VBox” is currently a **`layout.VList` with a `layout.Box`
+describing its dimensions**. There is no separate paragraph `VBox` type. This
+VList is a completed natural stack of full-height lines, not an elastic vertical
+list or the surrounding CSS block.
+
+The diagram and table follow the current `tycli`/`documentlayout` route. Solid
+arrows show the main transformations; dashed arrows show retained inputs or
+optional queries. This is a data-flow diagram; CSS callback scheduling is
+explained below.
+
+![A paragraph's career from styled HTML through normalized inline groups, itemized text, reusable preparation, breaking and freezing to a VList and positioned document result.](PARAGRAPH_CAREER.svg)
+
+[Graphviz DOT source](PARAGRAPH_CAREER.dot). Regenerate from the typography root:
+
+```sh
+dot -Tsvg doc/PARAGRAPH_CAREER.dot -o doc/PARAGRAPH_CAREER.svg
+```
+
+| Stage and data structures | Module/package | Purpose | Limitations |
+| --- | --- | --- | --- |
+| **1. Styled HTML:** `htmlinput.Document`, `htmlinput.Node`, backed by `styledtree.StyNode` | `tytui/htmlinput`; `w3c-dom/styledtree` | Retains document structure, decoded text, attributes, CSS style context and original source identities. | No glyphs, line breaks or final geometry. DOM text offsets are not offsets into original HTML bytes. |
+| **2. Normalized box structure:** `RenderNode` → `LayoutNode`, retained by `documentlayout.Document` | `css-box-layout/layout`; `tytui/documentlayout` | Produces the structure CSS lays out, including anonymous inline groups and atomic inline boxes. | Still structural, not typeset. An HTML element and a typesetting paragraph are not necessarily one-to-one; normalization can produce several groups. |
+| **3. Extracted paragraph input:** `documentlayout.InlineGroup` | `tytui/documentlayout` | Collects one group's normalized text, style spans, paint, line-height values, bidi isolates and source correspondence. Inline objects become U+FFFC markers with `AtomicAnchor` IDs. | No font bindings or glyphs. Object interiors remain separate boxes/groups and are not flattened into the enclosing paragraph. |
+| **4. Itemized text:** `styled.Text`, accompanied by `[]glyphing.FontTextRun` | `cords/styled`; `typography/glyphing` | `StyleMapper.ItemizeInline` selects preloaded faces, resolves grapheme fallback and attaches typography styles. `FontTextRun` records selected-font associations. | Still text, not shaped glyphs. Nominal character coverage does not guarantee script/language shaping support. Paint stays outside this text. |
+| **5. Bidi paragraph:** `styled.Paragraph`, passed through `khipu.ParagraphInput` | `cords/styled`; `khipu` | Establishes paragraph-wide direction and resolved bidi levels, including isolates, and couples that context with atomic anchors. | No line boundaries. The upstream bidi implementation has documented rejection/stall cases and is not fully cancellable mid-call. |
+| **6. Reusable preparation:** `paragraph.Prepared`, retaining `khipu.PreparedParagraph` | `typography/glyphing/paragraph`; `khipu` | Constructs and retains base knots and shaping records, together with source styles and bidi context, for measurement and repeated layouts. Atomic slots remain unbound. | Reusable working state, not completed layout output. No target width, final object geometry or vertical arrangement. Hyphenation policy is fixed; operations sharing preparation/services must be serialized. |
+| **7. Layout-specific flexible material:** `khipu.Khipu` | `khipu` | Binding copies prepared knots into isolated working storage, supplies atomic advances and shares immutable shaping records. | Layout-specific working state, not completed layout output. Its flexibility is horizontal, not vertical. |
+| **8. Break decisions:** knot-index endpoint path and selected discretionary decisions | `khipu/linebreak/firstfit` or `knuthplass` | Chooses line endings under the requested widths and breaking policy. | Decisions belong to their material/owner and geometry. A breakpoint list alone is neither a rendered paragraph nor a portable continuation token. |
+| **9. Frozen horizontal lines:** `FrozenKhipu`, `FrozenLine`, `FrozenKnot` | `khipu` | Captures immutable selected content, allocated horizontal spacing, line membership and physical traversal. | No paragraph-level vertical placement. Frozen material alone cannot supply source-style metrics for surviving spaces during CSS assembly. |
+| **10. Boxed paragraph:** `layout.VList`, `layout.Line`, `layout.Box`, published in `paragraph.Result` | `typography/layout`; `typography/glyphing/paragraph` | Adds baselines, full CSS line heights, line tops and atomic border origins while retaining frozen horizontal content. | Logical geometry, not ink bounds. Excludes surrounding block margins, padding and borders; no vertical stretch/shrink or target-height packing. |
+| **11. Positioned document result:** `documentlayout.Result`, `GroupResult`, `LayoutGeometryTable` | `tytui/documentlayout`; `css-box-layout/layout` | Combines paragraph VLists with source/paint associations and surrounding CSS box positions. | A layout snapshot, not rendering output. Outlines/proofs are produced separately by the `render` branch. |
+
+## Who drives the transformations?
 
 Applications normalize input, select/load fonts, resolve document layout values
-and retain paint. `glyphing.StyleMapper` maps styles to preselected faces and
-itemizes text. `glyphing/paragraph` then coordinates bidi preparation, horizontal
-typesetting and vertical assembly. Shared `layout` values are the completed
-output; the independent `render` branch consumes that output with paint.
+and retain paint. CSS core decides when a normalized inline group needs
+measurement or final layout; typography decides how to typeset it.
 
-```mermaid
-flowchart TD
-    App[Application: normalized text, selected fonts, document styles]
-    Mapper[glyphing.StyleMapper: projection, itemization, nominal coverage]
-    Text[styled.Text: typography styles and original byte coordinates]
-    Prep[paragraph.Prepare: bidi context and shaped horizontal material]
-    Measure[Prepared.MeasureIntrinsic: natural inline bounds]
-    Bind[Prepared.Layout: bind object advances]
-    Break[khipu breaker: select line endpoints]
-    Freeze[khipu freeze: immutable horizontal lines]
-    Assemble[paragraph assembly: CSS line heights and atomic placements]
-    Result[layout.VList: immutable geometry and frozen content]
-    Render[render: retained proofs]
-    App --> Mapper --> Text --> Prep
-    Prep --> Measure
-    Prep --> Bind --> Break --> Freeze --> Assemble --> Result
-    App -->|resolved line heights and object boxes| Bind
-    App -->|separate paint and rendering services| Render
-    Result --> Render
-```
+1. The application calls `documentlayout.Document.Layout`.
+2. The adapter invokes CSS `FlowLayout` with measurement/layout callbacks.
+3. CSS determines available width and nested object dimensions, then calls
+   `LayoutInline`. For automatic widths it may first call `MeasureInline`.
+4. The adapter extracts and itemizes the group, prepares it if necessary, and
+   calls `Prepared.Layout`. Measurement and layout share invocation-local
+   preparation.
+5. Typography returns the frozen paragraph and VList. The adapter retains these
+   details and returns extent, atomic positions and collapse eligibility to CSS.
+6. CSS completes surrounding block placement, including padding, borders and
+   margin collapsing. It does **not** restack the paragraph's lines. The adapter
+   publishes paragraphs and document geometry together after whole-document success.
+
+`tytui/documentlayout` is the headless integration adapter used by `tycli` as
+well as the TUI; the TUI event loop is not involved in these callbacks. Its module
+location is not an architectural requirement. See the
+[documentlayout call sequence](../../tytui/documentlayout/README.md#call-flow-css-initiates-paragraph-layout).
 
 `Run` is the one-shot text-only route: bidi construction, fresh encoding,
 breaking, freezing and assembly. It does not internally create a reusable
@@ -49,13 +84,40 @@ never forwarded to `opentype/otshape`. See
 
 ## Retained preparation versus layout results
 
-A `Prepared` retains source styles, paragraph-wide bidi data and reusable shaped
-base material. Atomic anchors identify original U+FFFC occurrences without giving
-them a font or text style. Binding supplies advances for those occurrences in
-fresh working material; line breaking and freezing choose the horizontal output
-for that request. Hyphenation policy belongs to preparation. Supported lazy
-replacement batches are shared across measurement/layout, while unsuccessful
-batches remain retryable.
+Both `PreparedParagraph` and `Khipu` are working representations. The former is
+returned by khipu's preparation API and retained privately inside typography's
+`paragraph.Prepared`; that does not make it completed layout output. The
+completed immutable results are `FrozenKhipu` and `VList`.
+
+**Preparation already constructs the base knots.** `PrepareParagraph` shapes the
+text and compiles candidate material into retained knots, shaping records and
+source associations. It leaves atomic advances unbound. Supported lazy
+replacement batches can subsequently be memoized on preparation and shared across
+measurement/layout; unsuccessful batches remain retryable.
+
+**Binding creates isolated working state from those knots.** `BindParagraph`
+allocates a fresh `Khipu`, copies the prepared knots and mutable bookkeeping,
+substitutes the requested atomic advances, and shares immutable shaping records.
+It initializes independent discretionary caches and selections. Binding performs
+no shaping or discretionary discovery, but allocation and copying still cost work
+proportional to the retained material. It does not knot the text from scratch.
+See [PrepareParagraph and BindParagraph](../../khipu/paragraph_input.go).
+
+**Fresh bindings are an isolation strategy, not a fundamental requirement.**
+A successful breaker run replaces the binding's selected discretionary decisions;
+lazy alternatives also introduce binding-local state. Separate bindings isolate
+layout attempts, retries and reusable older continuation tokens. A shallow copy
+would share that mutable state and would not provide the same guarantee.
+
+A width change alone need not change the bound atomic advances. Khipu permits
+repeated breaker calls under its ownership rules, provided each breakpoint path
+stays paired with its discretionary selections until freezing. Reusing a binding
+could therefore avoid copying, but typography would need an explicit strategy
+for resetting or separating mutable decisions while preserving failure recovery
+and independent attempts. No such binding-reuse optimization is currently
+promised. Different-width continuation accepts fresh binding and full
+materialization for now; equal-width continuation already bypasses binding by
+reusing frozen lines. See [Khipu's ownership contract](../../khipu/khipu.go).
 
 Intrinsic measurement uses natural horizontal advances and supported break
 opportunities, not vertical metrics, final atomic heights, side skips or generated
@@ -66,15 +128,18 @@ neither preparation nor assembly computes an object's interior or CSS edges.
 Source/style/font services remain borrowed and stable. Copying configuration and
 request slices does not clone arbitrary implementations. Serialize operations
 sharing preparation or mutable services. Public results share frozen content and
-stable resources, with detached geometry and diagnostic slices. No mutable
-encoding/binding owner is published. Failures expose no partial output and cannot
-mutate earlier results; staged errors preserve their underlying causes.
+stable resources, with detached geometry and diagnostic slices. Failures expose
+no partial output and cannot mutate earlier results; staged errors preserve
+their underlying causes.
 
 Process paragraphs in turn. Keep preparation and continuation checkpoints only
 while that paragraph needs layout, continuation or retry. Drop all working handles
 after completion or abandonment; frozen fragments retain the source and services
 they need independently. There is no cross-paragraph cache or explicit `Close`.
-The [flow lifecycle](FLOW.md#paragraph-lifecycle) specifies this boundary in detail.
+Ordinary document layout keeps its preparation table private to the invocation
+and releases it after completion; it never publishes that table in the document
+result. The [flow lifecycle](FLOW.md#paragraph-lifecycle) specifies the sequential
+paragraph lifecycle for frame flow in detail.
 
 ## Vertical assembly and coordinates
 
