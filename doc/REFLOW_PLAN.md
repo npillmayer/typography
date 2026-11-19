@@ -403,6 +403,67 @@ Do not move DOM, discovery, CSS types or concrete font types into generic khipu 
 paragraph boundaries. No new serialization/replay contract is proposed. Existing
 replay-v5 controls and immutable ownership remain unchanged.
 
+## Module-by-module PR sequence
+
+The following is the proposed implementation sequence; no implementation or PR
+is created by this document. PR numbers below identify work units, not repository
+PR identifiers. PR 1 implements Stage 2; PRs 2–4 cover adoption, integration and
+the independent paragraph trials of Stage 3. They do not implement the register
+collections or page solver of Stage 4.
+
+For this migration there are no external consumers requiring source backwards
+compatibility. Change `khipu` first, then propagate its contracts into `typography`
+and `tytui` (including tycli). Temporary downstream compilation failures caused
+by that API change are permitted between migration PRs. Transitional aliases,
+compatibility wrappers and parallel legacy public APIs are not required.
+Source compatibility is separate from the behavioral contracts: preserve CSS
+geometry, original source coordinates, immutable ownership, paragraph lifecycle,
+replay v5 and the zero-service/breaker-work equal-width path.
+
+| PR | Scope | Acceptance gate |
+| --- | --- | --- |
+| **1 — khipu: immutable material and Tikray** | Compile the immutable SoA Khipu; add incarnation identity, atomic bindings and Discovery; migrate first-fit and KP to immutable Tikrays and captured geometry; migrate freezing, intrinsic measurement and checkpoint/seed APIs. Include Diagnostics/PolicyForLine. Preserve existing ordinary hyphenation modes and retain the NoHyphenation restriction for continuation. | Khipu ordinary/race/build/vet checks pass. Prove A remains freezable after B succeeds, fails or is cancelled; validate binding identity, detached accessors, variant normalization, intrinsic early admission, cache retry/cancellation and seed ownership. Existing supported output remains equivalent. Typography and tytui may still fail to compile against the changed APIs. |
+| **2 — typography: adopt the new contracts** | Migrate Run, Prepared, Layout, intrinsic measurement and existing StartFlow/Continuation.Fit orchestration to PR 1. Preserve the existing client behavior, CSS assembly and retained rendering boundaries. Keep the equal-width fast path geometry-only. | Typography ordinary/race/build/vet checks, dependency audits and adapter regressions pass against PR 1. Cover A/B/C width history, cancellation, atomic placement, source/feature domains and collection of working state while frozen fragments survive. Tytui may remain temporarily incompatible. |
+| **3 — tytui/tycli: complete the migration** | Update application consumers and affected test helpers; adapt tests to new source APIs while retaining their assertions. Verify paragraph/document layout, nested atomics, proofs, CLI behavior and offline replay. Update current usage documentation. | Establish a fully passing migration baseline across khipu, typography and tytui: ordinary/race/build/vet plus relevant dependency audits, adapter and integration regressions. Preserve current CSS/proof/replay-v5 controls and historical rejection evidence; do not regenerate controls to conceal drift. No downstream API breakage from PRs 1–3 remains. |
+| **4 — typography: expose independent paragraph trials** | Define and expose the client-facing trial orchestration API using reusable Khipu/Discovery, immutable Tikrays and matching copied assembly inputs. Allow independent constraints and atomic realizations; retain full freezing/assembly initially. Update application integration where needed. | Required owning and integration checks pass, preserving the PR 3 baseline. Prove retry/rollback isolation, freeze or assemble A after every outcome of B, changed-atomic prefix compatibility, cancellation recovery, bounded retention and unchanged equal-width reuse. Published results must not retain trial workspaces or preparation unnecessarily. |
+
+PR 1 is substantial. Organize its review into focused commits for material and
+binding, discovery, breaker decisions/freezing, and checkpoints. Its completed
+state must pass khipu's gate; this sequence does not require intermediate commits
+inside that PR to be independently publishable. PR 2 adopts the new khipu
+contracts before PR 4 exposes a broader trial API, keeping the existing flow
+behavior separately verifiable.
+
+### Temporary breakage and verification policy
+
+Each migration PR must identify its upstream revisions, remaining downstream
+API failures and the follow-up PR scope that repairs them. Record the actual
+sibling checkouts used for validation: local `replace` directives otherwise make
+a passing result ambiguous. A check blocked by an unmigrated consumer is reported
+as blocked, never passed. Expected downstream API failures do not excuse failures
+inside the owning module or justify weakening behavioral assertions.
+
+Run the owning module's ordinary and race suites, build and vet for each PR, plus
+applicable dependency audits and adapter regressions. Run downstream checks as
+soon as the corresponding consumers compile; PR 3 must run the complete migrated
+pipeline checks before claiming migration completion. PR 4 must preserve that
+baseline and run relevant cross-module checks for its new trial API. Include
+css-box-layout checks whenever changes reach its contracts. A coordinated set of
+PRs is also acceptable, but simultaneous updates across repositories are not a
+requirement.
+
+### Work after the migration series
+
+Register collections and bounded page trials follow as a separate series in
+css-box-layout and application integration. Define their typed integration and
+page-candidate boundaries before implementation; the page-decision protocol is
+still outside Stage 1's contracts. Hyphenating continuation gets its own PR and
+carry/provenance/mandatory-boundary/cancellation acceptance gate before removing
+the NoHyphenation restriction. It is not a prerequisite for migrating the current
+bounded flow profile. Trial-loop cost measurements and any optimization follow
+Stage 5, preserving historical measurement evidence; concurrent execution follows
+Stage 6's ownership and service audits. The upstream bidi fix remains deferred.
+
 ## Staged work and acceptance gates
 
 These stages are independent of FLOW.md's completed P1–P6 sequence. Stage 1's
@@ -494,7 +555,8 @@ Required acceptance cases include:
   collections or corrupt earlier candidates.
 
 Implementation must run the owning ordinary/race/build/vet suites and relevant
-cross-module checks. This document adds no implementation or new validation
+cross-module checks under the [PR verification policy](#temporary-breakage-and-verification-policy),
+including the complete migration baseline at PR 3. This document adds no implementation or new validation
 evidence. The upstream bidi preparation rejection/stall limitation remains
 separate deferred work, not an accepted result or a reason to reset bidi context
 at frame boundaries. General vertical elasticity and atomic-interior fragmentation
