@@ -19,8 +19,8 @@ VList is a completed natural stack of full-height lines, not an elastic vertical
 list or the surrounding CSS block.
 
 The diagram and table describe the `tycli`/`documentlayout` integration route.
-Typography now uses the PR 2 contracts below; application helper migration and
-the complete cross-module baseline remain PR 3 work in [REFLOW_PLAN.md](REFLOW_PLAN.md). Solid
+Typography uses the PR 2 contracts below; application adoption and the complete
+cross-module baseline are recorded in [PR 3](REFLOW_PR3.md). Solid
 arrows show the main transformations; dashed arrows show retained inputs or
 optional queries. This is a data-flow diagram; CSS callback scheduling is
 explained below.

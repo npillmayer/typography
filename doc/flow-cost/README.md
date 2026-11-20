@@ -4,7 +4,8 @@ Reflow PR 2 note (2026-11-20): the retained timing reports predate the immutable
 Khipu/Tikray migration. The phase helper now binds copied atomic advances and
 freezes captured plans; raw historical evidence is unchanged. Migrated helper
 correctness tests do not constitute a new performance measurement or release
-baseline; application integration remains PR 3 work.
+baseline. Application integration has since passed the
+[PR 3 correctness gate](../REFLOW_PR3.md). The timings remain historical.
 
 The benchmarks live in `glyphing/paragraph/flow_cost*_test.go`; the measurement
 code is compiled only for tests. No production code, dependency, public API or

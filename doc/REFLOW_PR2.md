@@ -1,5 +1,9 @@
 # Reflow PR 2: typography adoption
 
+Historical PR 2 completion snapshot. [PR 3](REFLOW_PR3.md) subsequently resolved
+the downstream failures recorded below and established the passing cross-module
+baseline; the original outcomes and checkout identities are retained here.
+
 Implemented 2026-11-20. This is PR 2 of [REFLOW_PLAN.md](REFLOW_PLAN.md), not a
 GitHub PR identifier. PR 3 application migration and the later public trial API,
 region registers, page solver and concurrency work remain deferred.
