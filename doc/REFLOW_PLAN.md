@@ -1,7 +1,7 @@
 # Region registers and speculative reflow
 
-Design and migration plan, updated 2026-11-20. **PRs 1–3 are implemented across khipu,
-typography and tytui/tycli; PR 4 and later work remain deferred.** This plan establishes the
+Design and migration plan, updated 2026-11-20. **PRs 1–4 are implemented across khipu,
+typography and tytui/tycli; later stages remain deferred.** This plan establishes the
 ownership and decision boundaries needed before general page layout and page
 breaking. It does not select a page-scoring algorithm or promise concurrent use
 of application paragraph handles. The reusable liquid paragraph is named
@@ -10,7 +10,8 @@ retained paragraph decisions form an immutable **`Tikray`**. Defining these
 replacements for the former `PreparedParagraph` and mutable `Khipu` state is
 Stage 1, specified in [REFLOW_KHIPU.md](REFLOW_KHIPU.md). Stage 2 is implemented
 in khipu, with typography and application adoption complete in PRs 2–3; the
-public trial API and later stages remain deferred.
+public paragraph trial API is implemented in [PR 4](REFLOW_PR4.md). Page-builder
+structures and scheduling/selection policy are explicitly outside that PR.
 
 The central model is **immutable Khipu → independent Tikrays and page candidates →
 adoption of a successor register collection**. Frame-set trials share stable
@@ -421,7 +422,8 @@ baseline and records the tested checkouts; no API breakage from these PRs remain
 The [PR 2 record](REFLOW_PR2.md) and
 [khipu record](../../khipu/doc/REFLOW_MIGRATION.md) retain their historical
 validation scope and then-outstanding downstream failures. PR numbers below
-identify work units, not repository PR identifiers. PR 4 and later work are deferred.
+identify work units, not repository PR identifiers. [PR 4](REFLOW_PR4.md) exposes
+independent paragraph trials; later work remains deferred.
 PR 1 implements Stage 2; PRs 2–4 cover adoption, integration and
 the independent paragraph trials of Stage 3. They do not implement the register
 collections or page solver of Stage 4.
@@ -483,9 +485,10 @@ Stage 6's ownership and service audits. The upstream bidi fix remains deferred.
 
 These stages are independent of FLOW.md's completed P1–P6 sequence. Stage 1's
 design is documented and Stage 2 is implemented with khipu's owning checks.
-Stage 3 adoption/integration is complete in PRs 2–3. Its public independent-trial
-API and Stages 4–6 remain deferred. The application helper failures are resolved;
-see [the passing migration baseline](REFLOW_PR3.md).
+Stage 3 adoption/integration is complete in PRs 2–3 and its public independent-trial
+API is implemented in PR 4. Stages 4–6 remain deferred. The application helper
+failures are resolved; see [the passing migration baseline](REFLOW_PR3.md) and
+[PR 4's verification record](REFLOW_PR4.md).
 
 1. **Define the new immutable SoA Khipu and its companion contracts — documented.**
    [REFLOW_KHIPU.md](REFLOW_KHIPU.md) is the reviewable specification and contains
@@ -520,7 +523,7 @@ see [the passing migration baseline](REFLOW_PR3.md).
    Khipu, supply trial bindings and produce independent Tikrays; make freezing consume
    those Tikrays. Preserve existing algorithms/output while proving candidate A
    remains valid after all outcomes of B. This requires the Stage 1 design first.
-3. **Add isolated paragraph trials.** Retain bidi/source context, bind atomic
+3. **Add isolated paragraph trials — implemented in PR 4.** Retain bidi/source context, bind atomic
    realizations, assemble Tikrays and preserve equal-width reuse. Start serialized
    with full materialization; do not claim general hyphenating continuation until
    its checkpoint gate passes.

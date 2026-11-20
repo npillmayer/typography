@@ -31,6 +31,8 @@ Assembly implements [VList assembly](../../doc/VLIST_CONTRACT.md).
 | --- | --- |
 | Lay out text once | `Run` |
 | Measure or lay out the same text at several widths, or include inline objects | `Prepare`, then `Prepared.MeasureIntrinsic` / `Prepared.Layout` |
+| Retain independent candidates and assemble one later | `Prepared.Trial`, `Trial.Plan`, `Trial.Assemble` |
+| Lock accepted lines and search a changed suffix | `Trial.Checkpoint`, then `Prepared.Trial` with `Prefix` |
 | Flow a paragraph through frames, possibly of different widths | `Prepared.StartFlow`, then `Continuation.Fit` |
 | Divide an existing layout without rebreaking | `Fragment`, then `SplitFragment` or `FitFragment` |
 
@@ -135,6 +137,79 @@ and is required for frame flow.
 To override both, provide `&paragraph.HorizontalLayout{LeftSkip: ..., RightSkip: ...}`
 with `khipu.KnotCore` values using `W`, `MinW`, `MaxW`. An empty `HorizontalLayout`
 explicitly sets both skips to zero.
+
+## Retain independent paragraph trials
+
+`Layout` searches and assembles immediately. Use `Trial` to retain decisions
+before paying for freezing and CSS assembly. It accepts the same layout inputs:
+
+```go
+request := paragraph.LayoutRequest{Params: params}
+a, err := prepared.Trial(paragraph.TrialRequest{Layout: request})
+if err != nil { return err }
+request.Params.Constraints.Width = 180 * dimen.BP
+b, err := prepared.Trial(paragraph.TrialRequest{Layout: request})
+if err != nil { return err } // A would also survive this failure.
+fmt.Println(len(a.Plan().Lines()), len(b.Plan().Lines()))
+chosen, err := a.Assemble() // B has not overwritten A.
+if err != nil { return err }
+fmt.Println(chosen.VList.Box())
+```
+
+Each immutable `Trial` owns its selected `khipu.Tikray` and copied line-height,
+side-skip and atomic-box inputs. `Inputs()` returns a detached snapshot. `Plan()`
+exposes immutable decisions, per-line policy and diagnostics; `khipu.Freeze(plan)`
+is available when only horizontal output is wanted. `Assemble()` always freezes
+and assembles the complete paragraph, without searching or shaping again. It may
+query stable metrics/resolver services and may fail without invalidating the trial.
+See [Tikray versus paragraph.Trial](../../doc/PARAGRAPH_DESIGN.md#tikray-versus-paragraphtrial)
+for the distinction between breaking decisions and their assembly wrapper.
+
+`TrialRequest.Shape` optionally supplies a `khipu.LineShape` instead of a rectangle.
+Its one-based line widths are captured during search, and the callback is not
+retained. For shaped or continued paragraphs, `Plan().Lines()` records actual
+widths/skips; `Inputs()` describes the requested suffix settings. Optional
+`FirstFit` / `KnuthPlass` parameters let each trial choose its breaking policy;
+only the arm matching `Layout.Params.Breaker` may be supplied. Hyphenation mode
+and source styles remain fixed by preparation.
+
+For a compatible `NoHyphenation` trial, lock already accepted complete lines:
+
+```go
+checkpoint, err := a.Checkpoint(1) // Requires at least one line in A.
+if err != nil { return err }
+suffix := a.Inputs()
+suffix.Params.Breaker = paragraph.FirstFit
+suffix.Params.Constraints.Width = 160 * dimen.BP
+continued, err := prepared.Trial(paragraph.TrialRequest{
+    Layout: suffix, Prefix: checkpoint,
+})
+if err != nil { return err }
+result, err := continued.Assemble() // Complete paragraph, including locked line 1.
+if err != nil { return err }
+fmt.Println(result.BreakPositions)
+```
+
+The prefix retains endpoints, widths, skips and policy; only the suffix is
+searched. The preparation must be the same incarnation. A nonempty checkpoint
+requires unchanged `LineLayout` values (conservatively including suffix-only
+overrides), and identical consumed `AtomicBox` values, including height and all
+margins. Unconsumed atomic boxes may change. Keep matching application-owned
+atomic interiors yourself; typography cannot certify their render identity.
+Only first-fit continuation is supported; the original prefix may come from KP.
+Checkpoint counts range from zero through all lines. Zero locks no geometry;
+invalid/foreign checkpoints fail without publishing a candidate.
+
+Trials have no mutable selection or rollback state: keep the candidate you need
+and release the others. Serialize calls using shared services. Keep preparation
+only while more searches/measurement are possible; release it and checkpoints
+when the paragraph finishes or is abandoned. A trial needs neither preparation
+nor discovery for later assembly, and frozen output retains neither trials nor
+checkpoints. This API does not select frames or build pages. For unchanged-width
+frame flow, continue using `StartFlow`/`Continuation.Fit`; its equal-width branch
+reuses geometry with zero service or breaker calls. `Trial` always requests a
+search and does not infer that fast path. See the
+[PR 4 contracts and validation](../../doc/REFLOW_PR4.md).
 
 ## Measure intrinsic Widths
 

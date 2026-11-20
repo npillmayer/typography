@@ -107,9 +107,34 @@ uses that trial's captured geometry and selected alternatives without callbacks.
 the binding, and later success or failure cannot overwrite an earlier trial's
 decisions. Typography currently makes a fresh binding per layout/changed-width
 continuation and fully freezes/assembles the selected plan. Equal-width flow
-bypasses all of that by reusing frozen lines. Broader client-facing trial APIs
-remain deferred to PR 4; current `Prepared.Layout` publishes only completed
-results. See [the contracts](REFLOW_KHIPU.md) and [binding](../../khipu/khipu.go).
+bypasses all of that by reusing frozen lines. `Prepared.Trial` publishes the
+independent Tikray together with copied assembly inputs; `Trial.Assemble` can
+materialize it after later candidates succeed or fail. `Prepared.Layout` is the
+immediate search-and-assemble convenience. A `TrialCheckpoint` pairs certified
+prefix decisions with line-height and consumed atomic geometry for a compatible
+suffix trial. No page builder or frame-selection policy is implied. See
+[the trial API](REFLOW_PR4.md), [the contracts](REFLOW_KHIPU.md) and
+[binding](../../khipu/khipu.go).
+
+### Tikray versus paragraph.Trial
+
+A `khipu.Tikray` holds the line-breaking decisions. A `paragraph.Trial` pairs
+those decisions with the inputs typography needs to assemble a CSS VList.
+`Prepared.Trial(…)` is the method that creates a `*paragraph.Trial`.
+
+| | `khipu.Tikray` | `paragraph.Trial` |
+| --- | --- | --- |
+| Retains | Material and atomic binding, breakpoints, selected discretionary replacements, captured widths/skips, breaking policy and diagnostics. | A Tikray, plus copied line-height and complete atomic-box inputs, source styles, bidi information and stable assembly services. |
+| Produces | Frozen horizontal lines through `khipu.Freeze(plan)`. | A complete paragraph result, including its CSS VList, through `trial.Assemble()`. |
+| Knows about CSS line-height and vertical atomic placement | No. | Yes. |
+
+Trial is an assembly-capable wrapper around Tikray; it does not duplicate the
+breaking decisions. `trial.Plan()` exposes its immutable Tikray. Both are
+immutable retained candidates, not mutable search workspaces. Neither retains
+`Prepared` or its discovery cache, so a trial can still be assembled after
+preparation has been released, provided its borrowed services remain usable.
+
+### Measurement and lifetime
 
 Intrinsic measurement uses natural horizontal advances and supported break
 opportunities, not vertical metrics, final atomic heights, side skips or generated

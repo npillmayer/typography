@@ -42,7 +42,7 @@ func resultMaterial(r *Result) []any {
 }
 
 // A completed trial must remain independently assemblable after another trial
-// succeeds or fails. The public trial API is deferred; exercise our private seam.
+// succeeds or fails. Exercise the low-level seam alongside the public Trial tests.
 func TestRetainedTikraySurvivesLaterLayouts(t *testing.T) {
 	p, request := reflowPreparation(t)
 	b, err := p.bindLayout(request)

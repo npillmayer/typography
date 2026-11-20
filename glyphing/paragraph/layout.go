@@ -177,18 +177,7 @@ func breakRequest(bound *khipu.AtomicBinding, discovery *khipu.Discovery, geomet
 }
 
 func breakLayout(request khipu.BreakRequest, breaker Breaker) (*khipu.Tikray, error) {
-	var plan *khipu.Tikray
-	var err error
-	switch breaker {
-	case FirstFit:
-		plan, err = firstfit.BreakParagraph(request, nil)
-	case KnuthPlass:
-		plan, err = knuthplass.BreakParagraph(request, nil)
-	}
-	if err != nil {
-		return nil, &Error{StageBreak, err}
-	}
-	return plan, nil
+	return searchTrial(request, breaker, nil, nil)
 }
 
 // finishWithPlan is shared by ordinary layout and checkpoint continuation.

@@ -18,7 +18,10 @@ import (
 // Measurement and layout failures cannot change earlier results or invalidate
 // this preparation. Measurement does not require final-layout geometry. Explicit
 // replacement batches are memoized under the same serialized ownership contract
-// and selected independently by each immutable layout trial.
+// and selected independently by each immutable layout trial. Trial exposes those
+// decisions with matching assembly inputs; Layout additionally assembles them.
+// Retain preparation while further paragraph searches/measurement are needed,
+// then release it. Retained trials and frozen results do not keep it alive.
 type Prepared struct {
 	content     *khipu.Khipu
 	discovery   *khipu.Discovery
@@ -82,11 +85,11 @@ type LayoutRequest struct {
 // paragraph. Lazy discretionary shaping is shared through discovery. Cancellation
 // is confined to internal streaming coordination.
 func (p *Prepared) Layout(request LayoutRequest) (*Result, error) {
-	b, err := p.bindLayout(request)
+	trial, err := p.Trial(TrialRequest{Layout: request})
 	if err != nil {
 		return nil, err
 	}
-	return finishLayout(b.bound, p.discovery, b.params, b.geometry, p.text, p.config, p.runs, b.boxes)
+	return trial.Assemble()
 }
 
 type boundLayout struct {

@@ -3,7 +3,8 @@
 Design specification, 2026-11-19. The khipu contracts are implemented by PR 1
 of [REFLOW_PLAN.md](REFLOW_PLAN.md); typography adopted them in PR 2 on
 2026-11-20. Application adoption and the cross-module gate are complete in
-[PR 3](REFLOW_PR3.md); the public trial API and later work remain deferred.
+[PR 3](REFLOW_PR3.md). Typography's public paragraph trial API is implemented in
+[PR 4](REFLOW_PR4.md); page-builder design and later work remain deferred.
 Go sketches describe contracts and illustrative private organization, not an exact transcription of implementation fields. Migration
 tables below compare the pre-PR-1 representations with the new model.
 
