@@ -60,9 +60,10 @@ The frame supplies geometry; `p` keeps its own typography and paragraph context.
 The bounded model also keeps inline-object dimensions fixed.
 
 Prepare `p` once and retain its logical material, shaped records, original styles,
-source/feature coordinates and paragraph bidi analysis. The reusable owner is
-`PreparedParagraph`; a layout binds fresh working Khipu records from it. Binding
-copies working storage and supplies atomic advances. It does not re-itemize or
+source/feature coordinates and paragraph bidi analysis. With reflow PRs 1–2,
+`paragraph.Prepared` retains immutable Khipu material and matching Discovery.
+Binding shares base knots and copies atomic advances; each breaker publishes an
+independent Tikray. It does not re-itemize or
 re-encode the source, select fonts, or reshape base text. Neither Unbox nor the
 physical knots of an old frozen line supply the logical continuation.
 
@@ -279,27 +280,22 @@ No new performance claim is made; E3 benchmark evidence was not regenerated.
 
 ### P2 — Add a production checkpoint and seeded first-fit entry in khipu
 
-**Implemented:** `owner.Checkpoint(prepared, completePath, acceptedLines)`
-returns an opaque `khipu.BreakCheckpoint`. It validates the entire ordinary path
-against immutable prepared knots, including the final trailer and mandatory
-breaks in the unaccepted suffix, then copies the accepted prefix. Certification
-establishes legal boundaries, not width fit, optimality or a breaker execution
-receipt; callers supply their successful complete path. Both FF and KP paths are
-supported. Zero accepted lines and the complete accepted path are valid.
+**Implemented, API updated by reflow PRs 1–2:** `khipu.Checkpoint(plan, acceptedLines)`
+returns an opaque `BreakCheckpoint` from a complete immutable Tikray. Publication
+of that plan has already validated path legality, mandatory boundaries, captured
+geometry and selected alternatives. Both FF and KP prefixes, zero accepted lines
+and fully accepted paths are supported under NoHyphenation.
 
-`firstfit.ContinueParagraph(binding, geometry, checkpoint)` uses the same
-first-fit loop as ordinary breaking, starting immediately after the last locked
-logical knot. `BreakCheckpoint.PrefixFor` checks the exact preparation identity,
-NoHyphenation admission and aligned plane lengths and returns a detached prefix;
-it does not scan prefix knots. Neither a legacy encoded paragraph nor another
-preparation on the same owner is accepted. No experimental `Flow*` API is exposed.
+`firstfit.ContinueParagraph(BreakRequest{Prefix: checkpoint, ...}, options)` uses
+the ordinary first-fit loop after the last locked knot. `SeedFor(binding)` checks
+incarnation and consumed atomic advances and returns detached prefix decisions,
+without prefix search or width queries. The checkpoint supplies accepted widths
+and skips; the request supplies suffix geometry. `Freeze(plan)` uses the resulting
+captured geometry without a separate width schedule or shape callback.
 
-Search checks cancellation between knots, after synchronous width callbacks and
-before publishing selections. It does no base shaping, CheckFace or discretionary
-work. Ordinary first-fit behavior stays unchanged. A later successful complete
-path can certify a longer checkpoint. Width history, unchanged skips and fixed
-atomic geometry remain caller responsibilities when freezing; no frame geometry
-or typography flow session is added by P2.
+Search is synchronous and context-free. It performs no base shaping, CheckFace
+or discretionary work. An independent successful continued Tikray can certify a
+longer checkpoint; older plans remain unchanged. No experimental API is exposed.
 
 See the [checkpoint implementation](../../khipu/checkpoint.go),
 [continuation entry](../../khipu/linebreak/firstfit/continue.go), and
@@ -310,9 +306,8 @@ or checkpoint. The P1 geometry-only path is preserved by P3's dispatch below;
 Retained fragment rendering and bounded scheduling are provided by P4/P5 below.
 
 **Owner:** khipu and `linebreak/firstfit`. Replace the experimental seam with an
-opaque checkpoint certified from the owner's prepared material and a successful
-complete break path. Retain a private copied prefix boundary list and owner
-identity. Reject nil/uninitialized handles, foreign preparations, non-monotone
+opaque checkpoint certified from a complete immutable Tikray. Retain copied
+prefix decisions, incarnation identity and consumed atomic advances. Reject nil/uninitialized handles, foreign preparations, non-monotone
 indexes, prohibited boundaries and skipped mandatory breaks. Do not accept an
 arbitrary source byte offset as a checkpoint or let callers mutate its boundaries.
 

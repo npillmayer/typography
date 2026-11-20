@@ -20,7 +20,7 @@ func TestFitGeometryOnlyCallBoundary(t *testing.T) {
 	}
 	for _, tc := range []struct{ name, body, want string }{
 		{"breaker in another file", `import ("github.com/npillmayer/khipu"; "github.com/npillmayer/khipu/linebreak/firstfit")
-func fitExtra() { _, _ = firstfit.BreakParagraph(nil, khipu.Params{}, nil) }`, "forbidden function " + khipuPath + "/linebreak/firstfit.BreakParagraph"},
+func fitExtra() { _, _ = firstfit.BreakParagraph(khipu.BreakRequest{}, nil) }`, "forbidden function " + khipuPath + "/linebreak/firstfit.BreakParagraph"},
 		{"method value", `func fitExtra() { var p *Prepared; f := p.Layout; _ = f }`, "forbidden function (*" + paragraphPath + ".Prepared).Layout"},
 		{"function alias", `func fitExtra() { f := Run; _ = f }`, "forbidden function " + paragraphPath + ".Run"},
 		{"unknown callback", `var fitCallback func(); func fitExtra() { fitCallback() }`, "unresolved callable"},
@@ -74,7 +74,7 @@ func TestFragmentGeometryDelegatedCallBoundary(t *testing.T) {
 						"fragment.go": strings.Replace(string(data), tc.anchor, "extraBreak()\n"+tc.anchor, 1),
 						"extra.go": `package paragraph
 import ("github.com/npillmayer/khipu"; "github.com/npillmayer/khipu/linebreak/firstfit")
-func extraBreak() { _, _ = firstfit.BreakParagraph(nil, khipu.Params{}, nil) }`,
+func extraBreak() { _, _ = firstfit.BreakParagraph(khipu.BreakRequest{}, nil) }`,
 					}}
 				}
 				p, err := m.load(paragraphPath)

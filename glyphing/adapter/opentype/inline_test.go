@@ -45,26 +45,27 @@ func TestItemizeInlineFeatureLigatureAndSourceCoordinates(t *testing.T) {
 			t.Fatal(err)
 		}
 		owner := khipu.NewKhipukamayuq(khipu.Config{Streaming: &khipu.StreamingConfig{Resolver: r, Defaults: defaults, NewShaper: func() (contracts.StreamingShaper, error) { return NewStream(8) }}})
-		prepared, err := owner.PrepareParagraph(khipu.ParagraphInput{Paragraph: para, Atomics: anchors}, khipu.PrepareOptions{})
+		prepared, discovery, err := owner.PrepareParagraph(khipu.ParagraphInput{Paragraph: para, Atomics: anchors}, khipu.PrepareOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, engine := range []string{"firstfit", "knuthplass"} {
-			knots, err := owner.BindParagraph(prepared, []khipu.AtomicAdvance{{ID: 13, Advance: 4 * dimen.BP}})
+			knots, err := khipu.BindParagraph(prepared, []khipu.AtomicAdvance{{ID: 13, Advance: 4 * dimen.BP}})
 			if err != nil {
 				t.Fatal(err)
 			}
 			layout := firstfit.DefaultLayout(linebreak.RectangularParShape(100 * dimen.BP))
-			var breaks []int
+			request := khipu.BreakRequest{Binding: knots, Discovery: discovery, Geometry: khipu.GeometryRequest{Shape: layout.LineShape, LeftSkip: layout.LeftSkip, RightSkip: layout.RightSkip}}
+			var plan *khipu.Tikray
 			if engine == "firstfit" {
-				breaks, err = firstfit.BreakParagraph(knots, layout, nil)
+				plan, err = firstfit.BreakParagraph(request, nil)
 			} else {
-				breaks, err = knuthplass.BreakParagraph(knots, layout, nil)
+				plan, err = knuthplass.BreakParagraph(request, nil)
 			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			frozen, err := owner.Freeze(knots, breaks, layout)
+			frozen, err := khipu.Freeze(plan)
 			if err != nil {
 				t.Fatal(err)
 			}

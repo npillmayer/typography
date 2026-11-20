@@ -126,7 +126,9 @@ for _, width := range []dimen.DU{240 * dimen.BP, 180 * dimen.BP} {
 
 Each layout returns independent immutable output without reshaping base text.
 Hyphenation is fixed at preparation: enabled modes require `config.Hyphenator`;
-replacement text may be shaped lazily. `NoHyphenation` is the simplest choice
+replacement text may be shaped lazily and complete discoveries are shared
+with subsequent measurement/layout calls. Selected breaks remain private to
+each layout trial. `NoHyphenation` is the simplest choice
 and is required for frame flow.
 
 `LayoutRequest.Horizontal == nil` uses the chosen breaker's default side skips.

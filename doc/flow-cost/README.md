@@ -1,5 +1,11 @@
 # Production flow cost harness (P6)
 
+Reflow PR 2 note (2026-11-20): the retained timing reports predate the immutable
+Khipu/Tikray migration. The phase helper now binds copied atomic advances and
+freezes captured plans; raw historical evidence is unchanged. Migrated helper
+correctness tests do not constitute a new performance measurement or release
+baseline; application integration remains PR 3 work.
+
 The benchmarks live in `glyphing/paragraph/flow_cost*_test.go`; the measurement
 code is compiled only for tests. No production code, dependency, public API or
 historical E1–E3 evidence is replaced. The [decision report](../FLOW_COSTS.md)
@@ -32,15 +38,16 @@ oracle: it may change the prefix. No 10,000-word real-font pilot is pooled into
 these samples, and no arbitrary mixed-bidi admission claim follows from pure RTL.
 
 A fixed-100-word-suffix series uses 100/1,000/10,000 synthetic `aa` words at A=145 bp,
-B=108.75 bp. Checkpoint certification is measured separately, including its scan of
-the complete path. A **separate component probe**, checked against actual Fit
+B=108.75 bp. Checkpoint extraction is measured separately: it copies accepted decisions from
+an already validated Tikray and records consumed atomic advances. A **separate component probe**, checked against actual Fit
 output, times calls to production checkpoint, binding, seeded breaking, freezing
 and CSS assembly/publication. Those clocks are not instrumentation inside Fit;
 their sum is not its wall time. They exclude Fit's full validation/rebasing and
 some orchestration. Allocation counts cover the whole probe, not individual phases.
 Material counts are actual input/output cardinalities, not knot-loop visits.
-A forwarding width schedule counts breaker width requests (including prefix
-requests); it is restored before freezing. Existing first-fit tests and the
+A counted suffix-width schedule records breaker width requests (including any
+unexpected prefix queries). Freezing consumes captured Tikray geometry, with no
+width callback. Existing first-fit tests and the
 production call-graph audit establish zero prefix search/zero reuse breaker work.
 
 Synthetic wrappers count resolution, shaper factory, Shape, CheckFace, metric,

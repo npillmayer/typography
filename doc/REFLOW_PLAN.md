@@ -1,7 +1,7 @@
 # Region registers and speculative reflow
 
-Design and migration plan, 2026-11-19. **Khipu PR 1 is implemented; downstream
-adoption and page-layout integration remain deferred.** This plan establishes the
+Design and migration plan, updated 2026-11-20. **Khipu PR 1 and typography PR 2
+are implemented; PR 3 application adoption and later work remain deferred.** This plan establishes the
 ownership and decision boundaries needed before general page layout and page
 breaking. It does not select a page-scoring algorithm or promise concurrent use
 of application paragraph handles. The reusable liquid paragraph is named
@@ -9,7 +9,7 @@ of application paragraph handles. The reusable liquid paragraph is named
 retained paragraph decisions form an immutable **`Tikray`**. Defining these
 replacements for the former `PreparedParagraph` and mutable `Khipu` state is
 Stage 1, specified in [REFLOW_KHIPU.md](REFLOW_KHIPU.md). Stage 2 is implemented
-in khipu; later stages remain deferred.
+in khipu, with typography adoption implemented by PR 2; later work remains deferred.
 
 The central model is **immutable Khipu → independent Tikrays and page candidates →
 adoption of a successor register collection**. Frame-set trials share stable
@@ -44,7 +44,10 @@ Register access is concurrency-safe through functional state threading. Concurre
 trial execution is a separate goal; initially serialize execution where current
 collaborators require it. Synchronization of page decisions remains undecided.
 
-## Current baseline and required changes
+## Pre-migration baseline and required changes
+
+This table records the starting point before PRs 1–2; the current material and
+trial contracts are described in [PARAGRAPH_DESIGN.md](PARAGRAPH_DESIGN.md).
 
 | Current behavior | Implication for this design |
 | --- | --- |
@@ -411,7 +414,8 @@ cancellation and cleanup remain required. No mid-search cancellation is promised
 
 ## Module-by-module PR sequence
 
-PR 1 is implemented in khipu; PR 2 and later work remain deferred. See the
+PR 1 is implemented in khipu and PR 2 in typography; PR 3 and later work remain
+deferred. See the [PR 2 migration record](REFLOW_PR2.md) and the
 [khipu migration record](../../khipu/doc/REFLOW_MIGRATION.md) for the changed APIs,
 validation scope and expected downstream breakage. No GitHub PR or commit has
 been created. PR numbers below identify work units, not repository PR identifiers.
@@ -476,8 +480,9 @@ Stage 6's ownership and service audits. The upstream bidi fix remains deferred.
 
 These stages are independent of FLOW.md's completed P1–P6 sequence. Stage 1's
 design is documented and Stage 2 is implemented with khipu's owning checks.
-Stages 3–6 remain deferred. Typography and tytui currently fail compilation at
-the unmigrated paragraph API, as permitted between PRs 1–3.
+Stage 3 adoption is implemented in typography by PR 2; application adoption,
+the independent trial API and Stages 4–6 remain deferred. Remaining application
+helper failures belong to PR 3; see [the validation record](REFLOW_PR2.md).
 
 1. **Define the new immutable SoA Khipu and its companion contracts — documented.**
    [REFLOW_KHIPU.md](REFLOW_KHIPU.md) is the reviewable specification and contains
@@ -568,7 +573,8 @@ cross-module checks under the [PR verification policy](#temporary-breakage-and-v
 including the complete migration baseline at PR 3. PR 1 passed khipu's ordinary
 and race suites, build, vet and module-tidiness checks; see its
 [verification record](../../khipu/doc/REFLOW_MIGRATION.md). This does not establish
-a migrated downstream baseline. The upstream bidi preparation rejection/stall limitation remains
+a migrated downstream baseline. PR 2 typography adoption and its downstream
+check results are recorded in [REFLOW_PR2.md](REFLOW_PR2.md). The upstream bidi preparation rejection/stall limitation remains
 separate deferred work, not an accepted result or a reason to reset bidi context
 at frame boundaries. General vertical elasticity and atomic-interior fragmentation
 are also outside this plan.

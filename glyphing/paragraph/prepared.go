@@ -10,17 +10,18 @@ import (
 	"github.com/npillmayer/uax/bidi"
 )
 
-// Prepared retains shaped horizontal material and resolved bidi data. Serialize
+// Prepared retains immutable Khipu material, matching Discovery and resolved
+// bidi data. Serialize
 // all operations on one handle; it has no concurrent-layout or transfer promise.
 // Source/style/service objects remain borrowed under their stable-lifetime
 // contracts. Request/configuration slices are copied; markup is not retained.
 // Measurement and layout failures cannot change earlier results or invalidate
 // this preparation. Measurement does not require final-layout geometry. Explicit
 // replacement batches are memoized under the same serialized ownership contract
-// and imported lazily into each fresh layout binding.
+// and selected independently by each immutable layout trial.
 type Prepared struct {
-	owner       *khipu.Khipukamayuq
-	content     *khipu.PreparedParagraph
+	content     *khipu.Khipu
+	discovery   *khipu.Discovery
 	text        styled.Text
 	config      khipu.Config
 	runs        []bidi.Segment
@@ -52,9 +53,9 @@ func Prepare(input Input, options khipu.PrepareOptions, config khipu.Config) (*P
 		p.runs = append(p.runs, run)
 	}
 
-	p.owner = khipu.NewKhipukamayuq(p.config)
+	owner := khipu.NewKhipukamayuq(p.config)
 	options.AtomicBoundaries = slices.Clone(options.AtomicBoundaries)
-	p.content, err = p.owner.PrepareParagraph(khipu.ParagraphInput{Paragraph: para, Atomics: p.anchors}, options)
+	p.content, p.discovery, err = owner.PrepareParagraph(khipu.ParagraphInput{Paragraph: para, Atomics: p.anchors}, options)
 	if err != nil {
 		return fail(StagePrepare, err)
 	}
@@ -76,16 +77,16 @@ type LayoutRequest struct {
 	Atomics    []AtomicBox
 }
 
-// Layout validates geometry, derives advances, binds fresh working material,
+// Layout validates geometry, derives advances, binds copied atomic advances,
 // breaks, freezes and assembles a detached result. It does not reshape the base
-// paragraph. Lazy discretionary shaping remains owner-controlled. Cancellation
+// paragraph. Lazy discretionary shaping is shared through discovery. Cancellation
 // is confined to internal streaming coordination.
 func (p *Prepared) Layout(request LayoutRequest) (*Result, error) {
 	b, err := p.bindLayout(request)
 	if err != nil {
 		return nil, err
 	}
-	return finishLayout(p.owner, b.bound, b.params, b.geometry, p.text, p.config, p.runs, b.boxes)
+	return finishLayout(b.bound, p.discovery, b.params, b.geometry, p.text, p.config, p.runs, b.boxes)
 }
 
 type boundLayout struct {
@@ -93,13 +94,13 @@ type boundLayout struct {
 	geometry khipu.Params
 	boxes    map[contracts.AtomicID]AtomicBox
 	advances []khipu.AtomicAdvance
-	bound    *khipu.Khipu
+	bound    *khipu.AtomicBinding
 }
 
 func (p *Prepared) bindLayout(request LayoutRequest) (*boundLayout, error) {
 	fail := func(stage Stage, err error) (*boundLayout, error) { return nil, &Error{stage, err} }
 
-	if p == nil || p.owner == nil || p.content == nil {
+	if p == nil || p.discovery == nil || p.content == nil {
 		return fail(StageInput, invalidInput("nil or uninitialized preparation"))
 	}
 	params, err := validateParams(request.Params, p.text, p.config)
@@ -114,7 +115,7 @@ func (p *Prepared) bindLayout(request LayoutRequest) (*boundLayout, error) {
 	if err != nil {
 		return fail(StageBind, err)
 	}
-	bound, err := p.owner.BindParagraph(p.content, advances)
+	bound, err := khipu.BindParagraph(p.content, advances)
 	if err != nil {
 		return fail(StageBind, err)
 	}

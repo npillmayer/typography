@@ -27,8 +27,8 @@ type Frame struct {
 type Continuation struct {
 	state     *flowState
 	remainder *layout.Fragment
-	path      []int
-	history   []dimen.DU // target widths of every accepted logical line
+	plan      *khipu.Tikray // complete immutable decisions for lazy checkpoint creation
+	history   []dimen.DU    // target widths of every accepted logical line
 	width     dimen.DU
 	breaker   Breaker // policy that produced the retained suffix
 }
@@ -64,7 +64,7 @@ type FlowResult struct {
 // tokens/preparation when the paragraph fully flows. Completed frozen fragments
 // need no working handle. There is no cross-paragraph cache or Close operation.
 func (p *Prepared) StartFlow(request LayoutRequest) (*Continuation, error) {
-	if p == nil || p.owner == nil || p.content == nil {
+	if p == nil || p.discovery == nil || p.content == nil {
 		return nil, &Error{StageInput, invalidInput("uninitialized preparation")}
 	}
 	if p.hyphenation != khipu.NoHyphenation {
@@ -74,11 +74,11 @@ func (p *Prepared) StartFlow(request LayoutRequest) (*Continuation, error) {
 	if err != nil {
 		return nil, err
 	}
-	path, err := breakLayout(p.owner, b.bound, b.params, b.geometry)
+	plan, err := breakLayout(breakRequest(b.bound, p.discovery, b.geometry), b.params.Breaker)
 	if err != nil {
 		return nil, err
 	}
-	result, err := finishWithBreaks(p.owner, b.bound, b.params, b.geometry, p.text, p.config, p.runs, b.boxes, path)
+	result, err := finishWithPlan(plan, b.bound.KnotCount(), b.params, p.text, p.config, p.runs, b.boxes)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (p *Prepared) StartFlow(request LayoutRequest) (*Continuation, error) {
 	if _, err = fitFlowFragment(f, nil, b.params.Constraints.Width, 0); err != nil {
 		return nil, &Error{StageAssemble, err}
 	}
-	return &Continuation{state: &flowState{p, b.params, b.geometry, b.boxes, b.advances}, remainder: f, path: slices.Clone(path), width: b.params.Constraints.Width, breaker: b.params.Breaker}, nil
+	return &Continuation{state: &flowState{p, b.params, b.geometry, b.boxes, b.advances}, remainder: f, plan: plan, width: b.params.Constraints.Width, breaker: b.params.Breaker}, nil
 }
 
 // Remainder returns the immutable retained tail, or nil for an uninitialized token.
@@ -134,7 +134,7 @@ func (c *Continuation) Fit(frame Frame) (*FlowResult, error) {
 		for _, line := range fit.Placed.Lines() {
 			history = append(history, line.Horizontal.TargetWidth)
 		}
-		out.Continuation = &Continuation{state: current.state, remainder: fit.Remainder, path: current.path, history: history, width: current.width, breaker: current.breaker}
+		out.Continuation = &Continuation{state: current.state, remainder: fit.Remainder, plan: current.plan, history: history, width: current.width, breaker: current.breaker}
 	}
 
 	return out, nil

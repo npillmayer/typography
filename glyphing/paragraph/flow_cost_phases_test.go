@@ -5,6 +5,7 @@ package paragraph
 import (
 	"time"
 
+	"github.com/npillmayer/khipu"
 	"github.com/npillmayer/khipu/dimen"
 	"github.com/npillmayer/khipu/linebreak/firstfit"
 	"github.com/npillmayer/typography/layout"
@@ -17,7 +18,8 @@ type P6PhaseSample struct {
 }
 
 type p6WidthCounter struct {
-	continuationWidths
+	history                []dimen.DU
+	width                  dimen.DU
 	queries, prefixQueries int
 }
 
@@ -26,11 +28,11 @@ func (w *p6WidthCounter) LineLength(line int32) dimen.DU {
 	if int(line) <= len(w.history) {
 		w.prefixQueries++
 	}
-	return w.continuationWidths.LineLength(line)
+	return w.width
 }
 
 func P6Checkpoint(c *Continuation) (any, error) {
-	return c.state.prepared.owner.Checkpoint(c.state.prepared.content, c.path, len(c.history))
+	return khipu.Checkpoint(c.plan, len(c.history))
 }
 
 // P6Phases is a separately measured decomposition, not timings inside Fit.
@@ -39,34 +41,35 @@ func P6Phases(c *Continuation, width dimen.DU) (*layout.Fragment, P6PhaseSample,
 	var m P6PhaseSample
 	s, p := c.state, c.state.prepared
 	start := time.Now()
-	cp, err := p.owner.Checkpoint(p.content, c.path, len(c.history))
+	cp, err := khipu.Checkpoint(c.plan, len(c.history))
 	m.Checkpoint = time.Since(start)
 	if err != nil {
 		return nil, m, err
 	}
 	start = time.Now()
-	bound, err := p.owner.BindParagraph(p.content, s.advances)
+	bound, err := khipu.BindParagraph(p.content, s.advances)
 	m.Bind = time.Since(start)
 	if err != nil {
 		return nil, m, err
 	}
-	m.BoundKnots = len(bound.Kind)
+	m.BoundKnots = bound.KnotCount()
 	if len(c.history) > 0 {
-		m.PrefixKnots = c.path[len(c.history)-1] + 1
+		m.PrefixKnots = c.plan.Lines()[len(c.history)-1].End.Knot + 1
 	}
 	geometry := s.geometry
-	shape := &p6WidthCounter{continuationWidths: continuationWidths{c.history, width}}
+	shape := &p6WidthCounter{history: c.history, width: width}
 	geometry.LineShape = shape
+	request := breakRequest(bound, p.discovery, geometry)
+	request.Prefix = cp
 	start = time.Now()
-	path, err := firstfit.ContinueParagraph(bound, geometry, cp)
+	plan, err := firstfit.ContinueParagraph(request, nil)
 	m.Break = time.Since(start)
 	m.BreakWidthQueries, m.PrefixWidthQueries = shape.queries, shape.prefixQueries
-	geometry.LineShape = shape.continuationWidths
 	if err != nil {
 		return nil, m, err
 	}
 	start = time.Now()
-	frozen, err := p.owner.Freeze(bound, path, geometry)
+	frozen, err := khipu.Freeze(plan)
 	m.Freeze = time.Since(start)
 	if err != nil {
 		return nil, m, err

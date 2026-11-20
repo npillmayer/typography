@@ -18,7 +18,9 @@ describing its dimensions**. There is no separate paragraph `VBox` type. This
 VList is a completed natural stack of full-height lines, not an elastic vertical
 list or the surrounding CSS block.
 
-The diagram and table follow the current `tycli`/`documentlayout` route. Solid
+The diagram and table describe the `tycli`/`documentlayout` integration route.
+Typography now uses the PR 2 contracts below; application helper migration and
+the complete cross-module baseline remain PR 3 work in [REFLOW_PLAN.md](REFLOW_PLAN.md). Solid
 arrows show the main transformations; dashed arrows show retained inputs or
 optional queries. This is a data-flow diagram; CSS callback scheduling is
 explained below.
@@ -38,9 +40,9 @@ dot -Tsvg doc/PARAGRAPH_CAREER.dot -o doc/PARAGRAPH_CAREER.svg
 | **3. Extracted paragraph input:** `documentlayout.InlineGroup` | `tytui/documentlayout` | Collects one group's normalized text, style spans, paint, line-height values, bidi isolates and source correspondence. Inline objects become U+FFFC markers with `AtomicAnchor` IDs. | No font bindings or glyphs. Object interiors remain separate boxes/groups and are not flattened into the enclosing paragraph. |
 | **4. Itemized text:** `styled.Text`, accompanied by `[]glyphing.FontTextRun` | `cords/styled`; `typography/glyphing` | `StyleMapper.ItemizeInline` selects preloaded faces, resolves grapheme fallback and attaches typography styles. `FontTextRun` records selected-font associations. | Still text, not shaped glyphs. Nominal character coverage does not guarantee script/language shaping support. Paint stays outside this text. |
 | **5. Bidi paragraph:** `styled.Paragraph`, passed through `khipu.ParagraphInput` | `cords/styled`; `khipu` | Establishes paragraph-wide direction and resolved bidi levels, including isolates, and couples that context with atomic anchors. | No line boundaries. The upstream bidi implementation has documented rejection/stall cases and is not fully cancellable mid-call. |
-| **6. Reusable preparation:** `paragraph.Prepared`, retaining `khipu.PreparedParagraph` | `typography/glyphing/paragraph`; `khipu` | Constructs and retains base knots and shaping records, together with source styles and bidi context, for measurement and repeated layouts. Atomic slots remain unbound. | Reusable working state, not completed layout output. No target width, final object geometry or vertical arrangement. Hyphenation policy is fixed; operations sharing preparation/services must be serialized. |
-| **7. Layout-specific flexible material:** `khipu.Khipu` | `khipu` | Binding copies prepared knots into isolated working storage, supplies atomic advances and shares immutable shaping records. | Layout-specific working state, not completed layout output. Its flexibility is horizontal, not vertical. |
-| **8. Break decisions:** knot-index endpoint path and selected discretionary decisions | `khipu/linebreak/firstfit` or `knuthplass` | Chooses line endings under the requested widths and breaking policy. | Decisions belong to their material/owner and geometry. A breakpoint list alone is neither a rendered paragraph nor a portable continuation token. |
+| **6. Reusable preparation:** `paragraph.Prepared`, retaining immutable `khipu.Khipu` and `Discovery` | `typography/glyphing/paragraph`; `khipu` | Constructs and retains base knots and shaping records, together with source styles and bidi context, for measurement and repeated layouts. Atomic slots remain unbound. | Reusable working state, not completed layout output. No target width, final object geometry or vertical arrangement. Hyphenation policy is fixed; operations sharing preparation/services must be serialized. |
+| **7. Bound atomic advances:** `khipu.AtomicBinding` | `khipu` | Binding copies atomic advances in canonical occurrence order and shares immutable base knots and shaping records. | Immutable material/advance pairing, without break decisions or vertical geometry. |
+| **8. Break decisions:** immutable `khipu.Tikray` | `khipu/linebreak/firstfit` or `knuthplass` | Retains line endings, selected replacements, binding, captured widths/skips and policy attribution. | Decisions belong to one material incarnation and binding. A breakpoint list alone is neither a rendered paragraph nor a portable continuation token. |
 | **9. Frozen horizontal lines:** `FrozenKhipu`, `FrozenLine`, `FrozenKnot` | `khipu` | Captures immutable selected content, allocated horizontal spacing, line membership and physical traversal. | No paragraph-level vertical placement. Frozen material alone cannot supply source-style metrics for surviving spaces during CSS assembly. |
 | **10. Boxed paragraph:** `layout.VList`, `layout.Line`, `layout.Box`, published in `paragraph.Result` | `typography/layout`; `typography/glyphing/paragraph` | Adds baselines, full CSS line heights, line tops and atomic border origins while retaining frozen horizontal content. | Logical geometry, not ink bounds. Excludes surrounding block margins, padding and borders; no vertical stretch/shrink or target-height packing. |
 | **11. Positioned document result:** `documentlayout.Result`, `GroupResult`, `LayoutGeometryTable` | `tytui/documentlayout`; `css-box-layout/layout` | Combines paragraph VLists with source/paint associations and surrounding CSS box positions. | A layout snapshot, not rendering output. Outlines/proofs are produced separately by the `render` branch. |
@@ -84,40 +86,30 @@ never forwarded to `opentype/otshape`. See
 
 ## Retained preparation versus layout results
 
-Both `PreparedParagraph` and `Khipu` are working representations. The former is
-returned by khipu's preparation API and retained privately inside typography's
-`paragraph.Prepared`; that does not make it completed layout output. The
-completed immutable results are `FrozenKhipu` and `VList`.
+`paragraph.Prepared` privately retains an immutable SoA `khipu.Khipu` and its
+matching synchronized `Discovery`. These are reusable material, not completed
+layout. `AtomicBinding` and `Tikray` are also immutable; completed horizontal and
+vertical layout is published as `FrozenKhipu` and `VList`.
 
 **Preparation already constructs the base knots.** `PrepareParagraph` shapes the
-text and compiles candidate material into retained knots, shaping records and
-source associations. It leaves atomic advances unbound. Supported lazy
-replacement batches can subsequently be memoized on preparation and shared across
-measurement/layout; unsuccessful batches remain retryable.
+text and compiles base knots, shaping records and source associations. Atomic
+slots remain unbound. Discovery memoizes complete lazy replacement batches for
+measurement and layout; failures remain retryable. Selection of a replacement
+belongs to a trial, never to shared material or discovery.
 
-**Binding creates isolated working state from those knots.** `BindParagraph`
-allocates a fresh `Khipu`, copies the prepared knots and mutable bookkeeping,
-substitutes the requested atomic advances, and shares immutable shaping records.
-It initializes independent discretionary caches and selections. Binding performs
-no shaping or discretionary discovery, but allocation and copying still cost work
-proportional to the retained material. It does not knot the text from scratch.
-See [PrepareParagraph and BindParagraph](../../khipu/paragraph_input.go).
+**Binding supplies atomic advances without copying the base knot planes.**
+`BindParagraph` returns an immutable `AtomicBinding` with copied canonical
+advances, sharing the Khipu. It performs no shaping or discovery. The breaker
+creates private search state and publishes a complete `Tikray`; `Freeze(plan)`
+uses that trial's captured geometry and selected alternatives without callbacks.
 
-**Fresh bindings are an isolation strategy, not a fundamental requirement.**
-A successful breaker run replaces the binding's selected discretionary decisions;
-lazy alternatives also introduce binding-local state. Separate bindings isolate
-layout attempts, retries and reusable older continuation tokens. A shallow copy
-would share that mutable state and would not provide the same guarantee.
-
-A width change alone need not change the bound atomic advances. Khipu permits
-repeated breaker calls under its ownership rules, provided each breakpoint path
-stays paired with its discretionary selections until freezing. Reusing a binding
-could therefore avoid copying, but typography would need an explicit strategy
-for resetting or separating mutable decisions while preserving failure recovery
-and independent attempts. No such binding-reuse optimization is currently
-promised. Different-width continuation accepts fresh binding and full
-materialization for now; equal-width continuation already bypasses binding by
-reusing frozen lines. See [Khipu's ownership contract](../../khipu/khipu.go).
+**Independent Tikrays provide trial isolation.** A width change need not change
+the binding, and later success or failure cannot overwrite an earlier trial's
+decisions. Typography currently makes a fresh binding per layout/changed-width
+continuation and fully freezes/assembles the selected plan. Equal-width flow
+bypasses all of that by reusing frozen lines. Broader client-facing trial APIs
+remain deferred to PR 4; current `Prepared.Layout` publishes only completed
+results. See [the contracts](REFLOW_KHIPU.md) and [binding](../../khipu/khipu.go).
 
 Intrinsic measurement uses natural horizontal advances and supported break
 opportunities, not vertical metrics, final atomic heights, side skips or generated
@@ -175,9 +167,10 @@ identity. A standalone fit requires a uniform-width frozen owner.
 
 `Continuation` instead owns a private identity and accepted width history.
 Equal-width flow uses the same geometry-only fitting core, including after an
-A/B width change. Different-width flow certifies a khipu checkpoint and resumes
+A/B width change. Different-width flow certifies a checkpoint from the retained Tikray and resumes
 first-fit search after the locked prefix; it retains original styles, bidi
-context and shaping. It currently binds, freezes and assembles the complete
+context and shaping. Accepted widths/skips come from the checkpoint, while the
+new width callback serves only suffix lines. It currently binds, freezes and assembles the complete
 combined path, then publishes the new tail alongside the previously retained
 prefix fragments. Prefix search and base shaping are not repeated, but prefix
 metric/materialization work can be. No suffix-proportional cost is promised.

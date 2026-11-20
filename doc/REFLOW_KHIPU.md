@@ -1,8 +1,8 @@
 # Stage 1: immutable Khipu and independent reflow decisions
 
 Design specification, 2026-11-19. The khipu contracts are implemented by PR 1
-of [REFLOW_PLAN.md](REFLOW_PLAN.md); typography and application adoption remain
-PR 2 and later work. Go sketches describe contracts and illustrative private
+of [REFLOW_PLAN.md](REFLOW_PLAN.md); typography adopted them in PR 2 on
+2026-11-20. Application adoption and later work remain deferred. Go sketches describe contracts and illustrative private
 organization, not an exact transcription of implementation fields. Migration
 tables below compare the pre-PR-1 representations with the new model.
 

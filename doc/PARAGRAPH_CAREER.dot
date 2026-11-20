@@ -11,9 +11,9 @@ digraph ParagraphCareer {
   input [label="3. documentlayout.InlineGroup\nText, styles, paint, source maps, object anchors", group=main];
   text [label="4. styled.Text + FontTextRun records\nItemized typography styles", group=main];
   bidi [label="5. styled.Paragraph / khipu.ParagraphInput\nParagraph-wide bidi context and anchors", group=main];
-  prep [label="6. paragraph.Prepared\nRetained khipu.PreparedParagraph", group=main, fillcolor="#eaf5e9"];
-  bound [label="7. khipu.Khipu\nBound, flexible horizontal material", group=main, fillcolor="#eaf5e9"];
-  breaks [label="8. Selected breakpoint path\nFirstFit or KnuthPlass decisions", group=main, fillcolor="#eaf5e9"];
+  prep [label="6. paragraph.Prepared\nImmutable khipu.Khipu + Discovery", group=main, fillcolor="#eaf5e9"];
+  bound [label="7. khipu.AtomicBinding\nShared material + copied atomic advances", group=main, fillcolor="#eaf5e9"];
+  breaks [label="8. Immutable khipu.Tikray\nCaptured geometry + selected decisions", group=main, fillcolor="#eaf5e9"];
   frozen [label="9. khipu.FrozenKhipu\nImmutable horizontal lines", group=main, fillcolor="#fff1d8"];
   vlist [label="10. layout.VList + layout.Box\nPositioned full-height line boxes\nPublished in paragraph.Result", group=main, fillcolor="#fff1d8"];
   document [label="11. documentlayout.Result\nParagraphs + surrounding CSS geometry", group=main, fillcolor="#fff1d8"];

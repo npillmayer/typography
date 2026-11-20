@@ -1,5 +1,11 @@
 # P6 production flow costs and release decision
 
+Reflow PR 2 note (2026-11-20): the recorded timings below predate the immutable
+Khipu/Tikray migration. The phase helper now binds copied atomic advances and
+freezes captured plans; raw historical evidence is unchanged. Migrated helper
+correctness tests do not constitute a new performance measurement or release
+baseline; application integration remains PR 3 work.
+
 Measured 2026-11-18 against the current local working trees. P6 completes
 verification of the opt-in bounded frame-flow profile; it does not claim general
 pagination or arbitrary mixed-bidi support. No production algorithm was changed

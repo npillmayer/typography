@@ -24,10 +24,10 @@ import (
 // validation and unsupported policy) use StageMeasure. Errors preserve their causes, return zero
 // widths and leave the preparation reusable.
 func (p *Prepared) MeasureIntrinsic(request khipu.MeasureRequest) (khipu.IntrinsicWidths, error) {
-	if p == nil || p.owner == nil || p.content == nil {
+	if p == nil || p.discovery == nil || p.content == nil {
 		return khipu.IntrinsicWidths{}, &Error{StageInput, invalidInput("nil or uninitialized preparation")}
 	}
-	widths, err := p.owner.MeasureIntrinsic(p.content, request)
+	widths, err := khipu.MeasureIntrinsic(p.content, p.discovery, request)
 	if err != nil {
 		return khipu.IntrinsicWidths{}, &Error{StageMeasure, err}
 	}

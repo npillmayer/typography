@@ -115,8 +115,8 @@ type Result struct {
 // Run prepares bidi levels, encodes, breaks, freezes, then assembles a boxed vlist.
 // It accepts text-only input; nonempty Atomics fails at StageInput because Run
 // has no object geometry. Use Prepare/Layout for mixed or reusable layout.
-// It creates a fresh owner for every invocation and freezes before returning or
-// running another breaker. No elastic paragraph/owner is published. Config uses
+// It creates fresh immutable material and an independent trial, then freezes
+// before returning. No material, discovery or trial handle is published. Config uses
 // khipu's existing service contracts (including hyphenation). CSS assembly
 // requires explicit streaming font/size/resolver defaults. Streaming is supplied
 // by the caller; its factory must return fresh exclusive shapers. Config.Params governs encoder
@@ -150,57 +150,59 @@ func Run(input Input, params Params, config khipu.Config) (*Result, error) {
 	}
 
 	owner := khipu.NewKhipukamayuq(config)
-	encoded, err := owner.EncodeParagraph(para)
+	encoded, discovery, err := owner.EncodeParagraph(para)
 	if err != nil {
 		return fail(StageEncode, err)
 	}
-	return finishLayout(owner, encoded, params, layoutGeometry(params, nil), text, config, runs, nil)
+	bound, err := khipu.BindParagraph(encoded, nil)
+	if err != nil {
+		return fail(StageBind, err)
+	}
+	return finishLayout(bound, discovery, params, layoutGeometry(params, nil), text, config, runs, nil)
 }
 
-// finishLayout owns fresh bound material and publishes only a complete result.
-func finishLayout(owner *khipu.Khipukamayuq, encoded *khipu.Khipu, params Params, geometry khipu.Params, text styled.Text, config khipu.Config, runs []bidi.Segment, atomics map[contracts.AtomicID]AtomicBox) (*Result, error) {
-	breaks, err := breakLayout(owner, encoded, params, geometry)
+// finishLayout creates an independent trial and publishes only a complete result.
+func finishLayout(bound *khipu.AtomicBinding, discovery *khipu.Discovery, params Params, geometry khipu.Params, text styled.Text, config khipu.Config, runs []bidi.Segment, atomics map[contracts.AtomicID]AtomicBox) (*Result, error) {
+	plan, err := breakLayout(breakRequest(bound, discovery, geometry), params.Breaker)
 	if err != nil {
 		return nil, err
 	}
-	return finishWithBreaks(owner, encoded, params, geometry, text, config, runs, atomics, breaks)
+	return finishWithPlan(plan, bound.KnotCount(), params, text, config, runs, atomics)
 }
 
-func breakLayout(owner *khipu.Khipukamayuq, encoded *khipu.Khipu, params Params, geometry khipu.Params) ([]int, error) {
-	fail := func(stage Stage, err error) ([]int, error) { return nil, &Error{stage, err} }
+func breakRequest(bound *khipu.AtomicBinding, discovery *khipu.Discovery, geometry khipu.Params) khipu.BreakRequest {
+	return khipu.BreakRequest{Binding: bound, Discovery: discovery, Geometry: khipu.GeometryRequest{
+		Shape: geometry.LineShape, LeftSkip: geometry.LeftSkip, RightSkip: geometry.RightSkip,
+	}}
+}
 
+func breakLayout(request khipu.BreakRequest, breaker Breaker) (*khipu.Tikray, error) {
+	var plan *khipu.Tikray
 	var err error
-	var breaks []int
-	switch params.Breaker {
+	switch breaker {
 	case FirstFit:
-		options := firstfit.NewDefaultParameters()
-		options.DiscretionaryProvider = owner
-		breaks, err = firstfit.BreakParagraph(encoded, geometry, options)
+		plan, err = firstfit.BreakParagraph(request, nil)
 	case KnuthPlass:
-		options := knuthplass.NewDefaultParameters()
-		options.DiscretionaryProvider = owner
-		breaks, err = knuthplass.BreakParagraph(encoded, geometry, options)
+		plan, err = knuthplass.BreakParagraph(request, nil)
 	}
 	if err != nil {
-		return fail(StageBreak, err)
+		return nil, &Error{StageBreak, err}
 	}
-
-	return breaks, nil
+	return plan, nil
 }
 
-// finishWithBreaks is shared by ordinary layout and checkpoint continuation.
-func finishWithBreaks(owner *khipu.Khipukamayuq, encoded *khipu.Khipu, params Params, geometry khipu.Params, text styled.Text, config khipu.Config, runs []bidi.Segment, atomics map[contracts.AtomicID]AtomicBox, breaks []int) (*Result, error) {
+// finishWithPlan is shared by ordinary layout and checkpoint continuation.
+// Freezing consumes only the trial's captured geometry and selected alternatives.
+func finishWithPlan(plan *khipu.Tikray, encodedKnots int, params Params, text styled.Text, config khipu.Config, runs []bidi.Segment, atomics map[contracts.AtomicID]AtomicBox) (*Result, error) {
 	fail := func(stage Stage, err error) (*Result, error) { return nil, &Error{stage, err} }
-
-	positions, err := encoded.BreakpointPositions(breaks)
+	positions, err := plan.BreakpointPositions()
 	if err != nil {
 		return fail(StageBreak, err)
 	}
-	frozen, err := owner.Freeze(encoded, breaks, geometry)
+	frozen, err := khipu.Freeze(plan)
 	if err != nil {
 		return fail(StageFreeze, err)
 	}
-
 	vlist, err := assembleLineHeight(frozen, params.LineLayout, text, config, atomics)
 	if err == nil {
 		err = placeAtomics(vlist, atomics)
@@ -212,8 +214,7 @@ func finishWithBreaks(owner *khipu.Khipukamayuq, encoded *khipu.Khipu, params Pa
 	if err != nil {
 		return fail(StageAssemble, err)
 	}
-
-	return &Result{Frozen: frozen, VList: published, BreakPositions: positions, BidiRuns: slices.Clone(runs), EncodedKnots: len(encoded.Kind), BreakCount: len(breaks)}, nil
+	return &Result{Frozen: frozen, VList: published, BreakPositions: positions, BidiRuns: slices.Clone(runs), EncodedKnots: encodedKnots, BreakCount: len(positions)}, nil
 }
 
 func invalidInput(message string) error {
