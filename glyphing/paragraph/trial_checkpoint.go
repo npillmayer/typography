@@ -26,6 +26,11 @@ type TrialCheckpoint struct {
 // vertical dimensions. Application-owned atomic interiors must also remain
 // consistent; this package cannot compare or certify their rendering identity.
 func (t *Trial) Checkpoint(acceptedLines int) (*TrialCheckpoint, error) {
+	// Keep the paragraph-level profile explicit while manual fragment/source
+	// mapping is integrated separately from khipu's manual continuation support.
+	if t.Plan() != nil && t.hyphenation != khipu.NoHyphenation && acceptedLines >= 0 && acceptedLines <= len(t.plan.Lines()) {
+		return nil, &Error{StageInput, khipu.ErrUnsupportedPolicy}
+	}
 	prefix, err := khipu.Checkpoint(t.Plan(), acceptedLines)
 	if err != nil {
 		return nil, &Error{StageInput, err}
