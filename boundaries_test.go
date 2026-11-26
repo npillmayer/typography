@@ -59,6 +59,6 @@ func TestPackageArms(t *testing.T) {
 			"github.com/npillmayer/opentype", root+"glyphing/adapter", root+"render/adapter")
 	})
 	t.Run("no-discovery", func(t *testing.T) {
-		forbid(t, dependencies(t, "./..."), "tytui", "github.com/npillmayer/fontfind", "github.com/npillmayer/w3c-dom")
+		forbid(t, dependencies(t, "./..."), "tytui", "github.com/npillmayer/fontfind", "github.com/npillmayer/w3c-dom", "github.com/npillmayer/css-box-layout", "github.com/npillmayer/pagelayout")
 	})
 }

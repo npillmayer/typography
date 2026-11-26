@@ -31,8 +31,9 @@ type Input struct {
 	Atomics   []contracts.AtomicAnchor
 }
 
-// Constraints are the available inline space. Height-constrained packing is not
-// supported. Width is nonnegative finite DU, not pixels or terminal columns.
+// Constraints are the available inline space. Use Trial.FitPrefixes for finite-
+// height prefix selection. Width is nonnegative finite DU, not pixels or terminal
+// columns; target-height stretching/packing is not supported.
 type Constraints struct{ Width dimen.DU }
 
 // Breaker selects the paragraph line-breaking algorithm; no zero default is implied.

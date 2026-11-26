@@ -33,6 +33,7 @@ Assembly implements [VList assembly](../../doc/VLIST_CONTRACT.md).
 | Measure or lay out the same text at several widths, or include inline objects | `Prepare`, then `Prepared.MeasureIntrinsic` / `Prepared.Layout` |
 | Retain independent candidates and assemble one later | `Prepared.Trial`, `Trial.Plan`, `Trial.Assemble` |
 | Lock accepted lines and search a changed suffix | `Trial.Checkpoint`, then `Prepared.Trial` with `Prefix` |
+| Inspect all fitting line prefixes and choose one | `Trial.FitPrefixes`, `PrefixFit.Prefixes`, `PrefixFit.Select` |
 | Flow a paragraph through frames, possibly of different widths | `Prepared.StartFlow`, then `Continuation.Fit` |
 | Divide an existing layout without rebreaking | `Fragment`, then `SplitFragment` or `FitFragment` |
 
@@ -210,6 +211,73 @@ frame flow, continue using `StartFlow`/`Continuation.Fit`; its equal-width branc
 reuses geometry with zero service or breaker calls. `Trial` always requests a
 search and does not infer that fast path. See the
 [PR 4 contracts and validation](../../doc/REFLOW_PR4.md).
+
+## Choose a fitting paragraph prefix
+
+Use `Trial.FitPrefixes` when a receiving area has a finite height and the caller
+may choose fewer lines than the longest fitting prefix. Preparation must use
+`khipu.NoHyphenation`:
+
+```go
+trial, err := prepared.Trial(paragraph.TrialRequest{Layout: request})
+if err != nil { return err }
+fit, err := trial.FitPrefixes(120) // fractional big points
+if err != nil { return err }
+for _, choice := range fit.Prefixes() {
+    fmt.Println(choice.Lines, choice.Height, choice.Status, choice.To.Offset)
+}
+// Choose a returned local line count; shorter fitting prefixes are allowed.
+selected, err := fit.Select(fit.Prefixes()[0].Lines)
+if err != nil { return err }
+fragment := selected.Fragment() // immutable, renderable independently
+if selected.Info().Status == paragraph.FitContinues {
+    suffix := trial.Inputs()
+    suffix.Params.Breaker = paragraph.FirstFit
+    suffix.Params.Constraints.Width = 160 * dimen.BP
+    continued, err := prepared.Trial(paragraph.TrialRequest{
+        Layout: suffix, Prefix: selected.Checkpoint(),
+    })
+    if err != nil { return err }
+    next, err := continued.FitPrefixes(180)
+    if err != nil { return err }
+    _ = next // its line counts exclude all previously accepted lines
+}
+_ = fragment
+```
+
+`Prefixes()` returns detached descriptors, longest first, including an explicit
+zero-line `FitNoProgress` choice last. Empty or already-completed paragraphs have
+one zero-line `FitComplete` choice. Full CSS line boxes must fit exactly, with
+no overflow tolerance. Zero-height lines can advance. Heights must be finite,
+nonnegative and below `dimen.Fil.Points()`. Horizontal overflow is reported by
+`Overfull` and the occupied `Width`; height fitting never clips it. A no-progress
+checkpoint can be retried with different receiving constraints.
+
+`FitPrefixes` assembles once per call using the trial's captured decisions;
+it does not reshape or search. `Select` performs no service calls. It pairs the
+selected fragment with its exact checkpoint and copied `FittedAtomic` records
+containing each accepted box and matching local placement. A complete selection
+has no checkpoint. Consumed atomic geometry stays locked; change unconsumed
+`LayoutRequest.Atomics` before a resumed trial when its receiving width changes.
+Application-owned atomic interiors must stay paired with these accepted values.
+
+`Info().From`/`To` describe logical consumption in `Input.Text` byte coordinates,
+qualified by preparation identity. `NextKnot` distinguishes zero-byte boundaries;
+these values support comparison, not resumption. `Coverage()` separately reports
+rendered glyph-cluster, retained-space and atomic ranges in logical source order.
+An authored range overlapping a ligature belongs to the fragment containing the
+whole cluster, even if that range starts inside it. Trimmed spaces and generated
+fill have no rendered coverage. Keep original source-to-processed mappings and
+empty-marker following/preceding affinity in the calling application; bidi
+visual order is not logical progression.
+
+Release the choice set and trial after selection. Retain the checkpoint while
+resumption is needed, and keep the fragment alone for later rendering. Frozen
+fragments retain no trial, preparation, discovery, shape callback or checkpoint.
+Calls remain synchronous and serialized under the borrowed-service contract.
+Invalid heights, non-fitting counts, foreign checkpoints, changed consumed
+atomics and unsupported hyphenation fail with existing stage/cause errors.
+See the runnable [prefix-selection example](prefix_example_test.go).
 
 ## Measure intrinsic Widths
 

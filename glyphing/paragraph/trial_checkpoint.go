@@ -12,9 +12,10 @@ import (
 // or a checkpoint chain. It is immutable and reusable for independent suffix
 // trials. Only NoHyphenation is supported. A zero value is invalid.
 type TrialCheckpoint struct {
-	prefix     *khipu.BreakCheckpoint
-	lineLayout *LineLayout
-	atomics    []AtomicBox
+	prefix        *khipu.BreakCheckpoint
+	lineLayout    *LineLayout
+	atomics       []AtomicBox
+	acceptedLines int
 }
 
 // Checkpoint locks zero through all lines of this trial, without assembly or
@@ -29,7 +30,7 @@ func (t *Trial) Checkpoint(acceptedLines int) (*TrialCheckpoint, error) {
 	if err != nil {
 		return nil, &Error{StageInput, err}
 	}
-	c := &TrialCheckpoint{prefix: prefix}
+	c := &TrialCheckpoint{prefix: prefix, acceptedLines: acceptedLines}
 	if acceptedLines > 0 {
 		c.lineLayout = t.inputs.Params.LineLayout.Clone()
 		end := t.plan.Lines()[acceptedLines-1].End.Knot

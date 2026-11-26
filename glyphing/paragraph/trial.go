@@ -45,6 +45,8 @@ type Trial struct {
 	boxes        map[contracts.AtomicID]AtomicBox
 	atomicKnots  []trialAtomic
 	encodedKnots int
+	startLine    int
+	hyphenation  khipu.HyphenationMode
 }
 
 type trialAtomic struct {
@@ -84,8 +86,11 @@ func (p *Prepared) Trial(request TrialRequest) (*Trial, error) {
 	streaming := &khipu.StreamingConfig{Resolver: p.config.Streaming.Resolver, Defaults: p.config.Streaming.Defaults}
 	streaming.Defaults.Features = slices.Clone(streaming.Defaults.Features)
 	t := &Trial{plan: plan, text: p.text, assembly: khipu.Config{Streaming: streaming},
-		runs: slices.Clone(p.runs), boxes: b.boxes, encodedKnots: b.bound.KnotCount(),
+		runs: slices.Clone(p.runs), boxes: b.boxes, encodedKnots: b.bound.KnotCount(), hyphenation: p.hyphenation,
 		inputs: LayoutRequest{Params: b.params, Horizontal: &HorizontalLayout{b.geometry.LeftSkip, b.geometry.RightSkip}}}
+	if request.Prefix != nil {
+		t.startLine = request.Prefix.acceptedLines
+	}
 	if len(b.boxes) != 0 {
 		for i := 0; i < p.content.KnotCount(); i++ {
 			knot, _ := p.content.Knot(i)

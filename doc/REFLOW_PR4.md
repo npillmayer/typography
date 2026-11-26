@@ -1,5 +1,16 @@
 # Reflow PR 4: independent paragraph trials
 
+Extension implemented 2026-11-26 (TYPE-SHIP-01): `Trial.FitPrefixes(height)` now
+describes all fitting whole-line suffix prefixes, and `PrefixFit.Select` freezes
+the chosen fragment/checkpoint/atomic association. Authoritative line geometry,
+zero-height progress and explicit NoProgress are preserved. Logical byte/knot
+positions and detached rendered-cluster coverage support consumer event mapping
+without DOM or page dependencies. See the
+[usage contract](../glyphing/paragraph/README.md#choose-a-fitting-paragraph-prefix).
+NoHyphenation and first-fit suffix restrictions remain; manual carry and the
+application fitting bridge are separate work. The original milestone evidence
+below remains dated; it is not a claim of page-runtime completion.
+
 Implemented 2026-11-20 for [REFLOW_PLAN.md](REFLOW_PLAN.md). This completes the
 paragraph trial API of Stage 3. It does not implement a page builder, region
 registers, frame scheduling/scoring, cross-region coordination or page-level
