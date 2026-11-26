@@ -319,7 +319,7 @@ func TestPrefixFitErrorsPreserveEarlierOutput(t *testing.T) {
 	if bad, err := fit.Select(-1); bad != nil || !errors.Is(err, khipu.ErrIllegalArguments) {
 		t.Fatal("negative count")
 	}
-	for _, mode := range []khipu.HyphenationMode{khipu.ExplicitHyphenation, khipu.AutomaticHyphenation} {
+	for _, mode := range []khipu.HyphenationMode{khipu.AutomaticHyphenation} {
 		cfg := synthetic()
 		cfg.Hyphenator = flowHyphenator{}
 		p, err := paragraph.Prepare(fitTextInput("aa"), khipu.PrepareOptions{Hyphenation: mode}, cfg)

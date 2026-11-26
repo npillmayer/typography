@@ -23,6 +23,10 @@ const (
 	GlyphCoverage CoverageKind = iota + 1
 	SpaceCoverage
 	AtomicCoverage
+	// ReplacementCoverage covers one rendered pre/post-break half's original
+	// source partition. Its generated clusters have replacement-local coordinates;
+	// no per-character correspondence to original source is implied.
+	ReplacementCoverage
 )
 
 // SourceCoverage identifies retained material in Input.Text coordinates, which
@@ -31,6 +35,8 @@ const (
 // nonempty source range belongs to the fragment containing that cluster, even
 // when its boundary is inside the cluster. Never infer ownership from glyph or
 // bidi visual order. Records are sorted in logical source order.
+// Replacement records cover a whole original source partition indivisibly,
+// independently of inserted, changed or removed bytes in the generated spelling.
 //
 // Retained spaces and atomic anchors are distinguished. Trimmed spaces, generated
 // fill and glyphless clusters provide no rendered coverage; logical consumption
@@ -53,11 +59,7 @@ func prefixCoverage(f *layout.Fragment) []SourceCoverage {
 			if id, ok := owner.Atomic(i); ok {
 				out = append(out, SourceCoverage{Source: knot.Source.Bytes, Line: line.Index, Kind: AtomicCoverage, Atomic: id})
 			} else if text, ok := owner.CopyText(i); ok {
-				for _, cluster := range text.Clusters {
-					if cluster.GlyphCount > 0 && cluster.Input.Bytes.Start < cluster.Input.Bytes.End {
-						out = append(out, SourceCoverage{Source: cluster.Input.Bytes, Line: line.Index, Kind: GlyphCoverage})
-					}
-				}
+				out = appendTextCoverage(out, knot, text, line.Index)
 			} else if knot.Kind == khipu.KTGlue && knot.Material == khipu.OriginalMaterial && knot.Source.Bytes.Start < knot.Source.Bytes.End {
 				out = append(out, SourceCoverage{Source: knot.Source.Bytes, Line: line.Index, Kind: SpaceCoverage})
 			}
@@ -72,5 +74,24 @@ func prefixCoverage(f *layout.Fragment) []SourceCoverage {
 		}
 		return cmp.Compare(a.Line, b.Line)
 	})
+	return out
+}
+
+func appendTextCoverage(out []SourceCoverage, knot khipu.FrozenKnot, text khipu.FrozenText, line int) []SourceCoverage {
+	if text.IsReplacement {
+		// Source provenance partitions the original textbox, even when spelling
+		// shrinks, grows or is empty. Never treat replacement-local cluster bytes
+		// as paragraph offsets. Silent material still advances logical positions,
+		// but has no rendered coverage for activating a visible owning range.
+		if len(text.Glyphs) > 0 && knot.Source.Bytes.Start < knot.Source.Bytes.End {
+			out = append(out, SourceCoverage{Source: knot.Source.Bytes, Line: line, Kind: ReplacementCoverage})
+		}
+		return out
+	}
+	for _, cluster := range text.Clusters {
+		if cluster.GlyphCount > 0 && cluster.Input.Bytes.Start < cluster.Input.Bytes.End {
+			out = append(out, SourceCoverage{Source: cluster.Input.Bytes, Line: line, Kind: GlyphCoverage})
+		}
+	}
 	return out
 }

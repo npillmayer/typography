@@ -13,6 +13,9 @@ import (
 // authority. Offset counts bytes in Input.Text (after any application-owned
 // whitespace processing); NextKnot distinguishes zero-byte material boundaries.
 // Incarnation qualifies the coordinates independently of width and line count.
+// At a discretionary split, Offset is the original source split and NextKnot is
+// past the original textbox. Pending replacement material stays in the checkpoint;
+// these coordinates alone never describe or authorize a resumable suffix.
 type LogicalPosition struct {
 	Incarnation khipu.IncarnationID
 	Offset      uint64
@@ -61,15 +64,16 @@ type PrefixFit struct {
 //
 // Height is finite, nonnegative and strictly below dimen.Fil in big points.
 // Authoritative line bottoms determine eligibility, without an overflow epsilon;
-// zero-height lines count as progress. Only NoHyphenation is supported. There
-// are no shaping, discovery or line-breaking calls here, and no context or page
-// policy. Assembly may query the stable borrowed metrics/resolver services.
+// zero-height lines count as progress. NoHyphenation and ExplicitHyphenation are
+// supported. There are no shaping, discovery or line-breaking calls here, and
+// no context or page policy. Assembly may query the stable borrowed
+// metrics/resolver services.
 // Errors publish no partial choice set and preserve earlier output.
 func (t *Trial) FitPrefixes(height float64) (*PrefixFit, error) {
 	if t.Plan() == nil || !fitBounded(height) || height < 0 {
 		return nil, &Error{StageInput, invalidInput("invalid trial or prefix height")}
 	}
-	if t.hyphenation != khipu.NoHyphenation {
+	if t.hyphenation != khipu.NoHyphenation && t.hyphenation != khipu.ExplicitHyphenation {
 		return nil, &Error{StageInput, khipu.ErrUnsupportedPolicy}
 	}
 	result, err := t.Assemble()

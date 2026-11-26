@@ -174,7 +174,8 @@ widths/skips; `Inputs()` describes the requested suffix settings. Optional
 only the arm matching `Layout.Params.Breaker` may be supplied. Hyphenation mode
 and source styles remain fixed by preparation.
 
-For a compatible `NoHyphenation` trial, lock already accepted complete lines:
+For a compatible `NoHyphenation` or `ExplicitHyphenation` trial, lock already
+accepted complete lines:
 
 ```go
 checkpoint, err := a.Checkpoint(1) // Requires at least one line in A.
@@ -210,13 +211,13 @@ checkpoints. This API does not select frames or build pages. For unchanged-width
 frame flow, continue using `StartFlow`/`Continuation.Fit`; its equal-width branch
 reuses geometry with zero service or breaker calls. `Trial` always requests a
 search and does not infer that fast path. See the
-[PR 4 contracts and validation](../../doc/REFLOW_PR4.md).
+[trial contracts](../../doc/REFLOW_PR4.md).
 
 ## Choose a fitting paragraph prefix
 
 Use `Trial.FitPrefixes` when a receiving area has a finite height and the caller
-may choose fewer lines than the longest fitting prefix. Preparation must use
-`khipu.NoHyphenation`:
+may choose fewer lines than the longest fitting prefix. Preparation may use
+`khipu.NoHyphenation` or `khipu.ExplicitHyphenation`:
 
 ```go
 trial, err := prepared.Trial(paragraph.TrialRequest{Layout: request})
@@ -266,8 +267,12 @@ qualified by preparation identity. `NextKnot` distinguishes zero-byte boundaries
 these values support comparison, not resumption. `Coverage()` separately reports
 rendered glyph-cluster, retained-space and atomic ranges in logical source order.
 An authored range overlapping a ligature belongs to the fragment containing the
-whole cluster, even if that range starts inside it. Trimmed spaces and generated
-fill have no rendered coverage. Keep original source-to-processed mappings and
+whole cluster, even if that range starts inside it. `ReplacementCoverage` reports
+each rendered pre/post-break half as one indivisible original source partition.
+Its generated cluster coordinates are local to replacement text and must not be
+treated as original offsets or a per-character source map. Trimmed spaces,
+generated fill and empty/silent replacement output have no rendered coverage;
+logical consumption and checkpoint carry still retain their source provenance. Keep original source-to-processed mappings and
 empty-marker following/preceding affinity in the calling application; bidi
 visual order is not logical progression.
 
@@ -277,7 +282,23 @@ fragments retain no trial, preparation, discovery, shape callback or checkpoint.
 Calls remain synchronous and serialized under the borrowed-service contract.
 Invalid heights, non-fitting counts, foreign checkpoints, changed consumed
 atomics and unsupported hyphenation fail with existing stage/cause errors.
-See the runnable [prefix-selection example](prefix_example_test.go).
+See the runnable [prefix-selection example](prefix_example_test.go) and
+[manual-continuation example](prefix_manual_example_test.go).
+
+For manual input, supply an explicit `Config.Hyphenator` and prepare with
+`PrepareOptions{Hyphenation: khipu.ExplicitHyphenation}`. A selected soft hyphen
+locks its exact replacement pair in the checkpoint; the post-break half starts
+the next suffix once, including zero-width material. `Info().To.Offset` records
+the original source split, not generated spelling length. Equal or changed
+suffix widths use the same `Prepared.Trial`/`FitPrefixes`/`Select` sequence.
+Later authored alternatives may invoke lazy replacement services; base text and
+accepted alternatives are never prepared again. Failed services publish no trial
+and leave previous choices/checkpoints usable for retry. Unsupported policy
+errors remain distinguishable from a successful `FitNoProgress`.
+
+Automatic continuation is unsupported. The carried half is not recursively split.
+The separate `StartFlow` convenience API continues to require `NoHyphenation`;
+manual fitting uses the explicit trial/prefix API above.
 
 ## Measure intrinsic Widths
 

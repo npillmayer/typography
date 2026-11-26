@@ -13,6 +13,8 @@ The suite covers:
 - Retained resource lifetime, concurrent outlines and independent render services.
 - Fragment proofs across width changes, RTL/empty fragments, failure/cancellation,
   and rendering after working paragraph preparation has been collected.
+- Manual soft-hyphen prefix selection, original source partitions and retained
+  real-font rendering after changed-width completion, with one selected hyphen.
 
 Proof construction must not reload files, reshape, rebreak or query line metrics.
 Frozen output shares stable font/source resources while owning detached geometry.

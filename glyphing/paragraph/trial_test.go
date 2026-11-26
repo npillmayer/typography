@@ -162,8 +162,7 @@ func TestTrialDiscoveryFailureRetryAndSelectedReplacements(t *testing.T) {
 			!reflect.DeepEqual(wantA, trialOutput(mustAssembleTrial(t, a))) {
 			t.Fatal("warm discovery or later selections changed retained candidates")
 		}
-		cp, err := selected.Checkpoint(0)
-		requireStage(t, cp, err, paragraph.StageInput, khipu.ErrUnsupportedPolicy)
+		mustCheckpoint(t, selected, 0)
 	}
 }
 

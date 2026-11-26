@@ -7,9 +7,17 @@ zero-height progress and explicit NoProgress are preserved. Logical byte/knot
 positions and detached rendered-cluster coverage support consumer event mapping
 without DOM or page dependencies. See the
 [usage contract](../glyphing/paragraph/README.md#choose-a-fitting-paragraph-prefix).
-NoHyphenation and first-fit suffix restrictions remain; manual carry and the
-application fitting bridge are separate work. The original milestone evidence
-below remains dated; it is not a claim of page-runtime completion.
+TYPE-SHIP-02 (2026-11-26) extends checkpoints and prefix selection to
+ExplicitHyphenation through the same API. Selected replacements and original
+source splits survive equal/changed-width resumes; suffix alternatives can be
+shaped lazily without re-preparing the base paragraph. ReplacementCoverage uses
+one indivisible original partition per rendered replacement half, never its
+replacement-local cluster offsets. Empty/silent halves retain logical carry
+without rendered coverage. Provider/shaper errors preserve earlier choices and
+checkpoints for retry. Automatic continuation and seeded KP remain unsupported;
+StartFlow retains its separate NoHyphenation restriction. The application fitting
+bridge remains separate work. Original milestone evidence below remains dated;
+it is not a claim of page-runtime completion.
 
 Implemented 2026-11-20 for [REFLOW_PLAN.md](REFLOW_PLAN.md). This completes the
 paragraph trial API of Stage 3. It does not implement a page builder, region
@@ -33,7 +41,7 @@ The wrapper does not introduce a second representation of breaking decisions.
 | `Trial.Plan()` | Immutable Tikray, independently usable with `khipu.Freeze`. Nil for a nil/zero Trial. |
 | `Trial.Inputs()` | Detached layout/assembly snapshot, explicit side skips and atomic boxes in material order. Custom/continued per-line widths and skips are authoritative in `Plan().Lines()`, not the suffix request snapshot. Zero for a nil/zero Trial. |
 | `Trial.Assemble()` | Full freeze and CSS assembly with retained inputs. No new search, discovery, shaping or CheckFace; stable metric/resolver services are still used. Repeated calls return independent output. |
-| `Trial.Checkpoint(n)` | Certifies zero through all complete lines, retaining their decisions and assembly compatibility constraints. Only NoHyphenation. |
+| `Trial.Checkpoint(n)` | Certifies zero through all complete lines, retaining their decisions and assembly compatibility constraints. NoHyphenation and ExplicitHyphenation. |
 | `TrialRequest.Prefix` | Continues the same preparation incarnation from that certificate, retaining the prefix exactly and searching only the first-fit suffix. The prefix may have been produced by KP. |
 
 Input validation still precedes publication. Invalid trials/counts fail at
@@ -60,7 +68,7 @@ drift without introducing a partial-style compatibility protocol. A zero-line
 checkpoint locks no line-height or atomic geometry. All checkpoints still require
 the same incarnation. Changed suffix widths, skips and first-fit settings are
 allowed; accepted decisions and their policy attribution remain unchanged.
-Hyphenating continuation and seeded KP remain unsupported.
+Automatic continuation and seeded KP remain unsupported.
 
 ## Ownership, lifecycle and unchanged flow
 
@@ -89,6 +97,20 @@ searches or calls services. Changed widths still freeze/assemble the complete
 plan before publishing the suffix fragment. `Prepared.Trial` requests a search;
 it does not infer equal-width reuse. Uniform-width trial results can use the
 existing `Fragment`/`FitFragment` path with the required compatibility attestations.
+
+## Manual continuation verification
+
+[Manual prefix tests](../glyphing/paragraph/prefix_manual_test.go) cover every
+line cut, exact heights, source splits, rendered replacement ownership, UTF-8/bidi,
+repeated width changes, suffix atomic geometry and full-prefix completion.
+Injected provider/shaper and unsupported-policy errors return no trial; completed
+discoveries stay reusable. Selection calls no services.
+[Lifetime tests](../glyphing/paragraph/prefix_manual_lifetime_test.go) and the
+[real-font proof](../integration/prefix_manual_render_test.go) retain fragments
+after releasing preparation, discovery, trials and checkpoints. The latter
+renders the selected hyphen exactly once after changed-width completion.
+Application-owned atomic interiors are associated by stable occurrence ID and
+validated accepted geometry; their rendering identity stays with the adapter.
 
 ## Verification and downstream impact
 

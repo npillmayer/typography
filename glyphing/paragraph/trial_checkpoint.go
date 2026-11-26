@@ -10,7 +10,8 @@ import (
 // assembly inputs. It retains the material incarnation, copied prefix decisions
 // and consumed atomic geometry, never the originating Trial/Prepared/Discovery
 // or a checkpoint chain. It is immutable and reusable for independent suffix
-// trials. Only NoHyphenation is supported. A zero value is invalid.
+// trials. NoHyphenation and ExplicitHyphenation are supported.
+// A zero value is invalid.
 type TrialCheckpoint struct {
 	prefix        *khipu.BreakCheckpoint
 	lineLayout    *LineLayout
@@ -26,11 +27,6 @@ type TrialCheckpoint struct {
 // vertical dimensions. Application-owned atomic interiors must also remain
 // consistent; this package cannot compare or certify their rendering identity.
 func (t *Trial) Checkpoint(acceptedLines int) (*TrialCheckpoint, error) {
-	// Keep the paragraph-level profile explicit while manual fragment/source
-	// mapping is integrated separately from khipu's manual continuation support.
-	if t.Plan() != nil && t.hyphenation != khipu.NoHyphenation && acceptedLines >= 0 && acceptedLines <= len(t.plan.Lines()) {
-		return nil, &Error{StageInput, khipu.ErrUnsupportedPolicy}
-	}
 	prefix, err := khipu.Checkpoint(t.Plan(), acceptedLines)
 	if err != nil {
 		return nil, &Error{StageInput, err}

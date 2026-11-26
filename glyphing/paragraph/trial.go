@@ -19,9 +19,10 @@ import (
 //
 // Nil algorithm parameters select defaults. Only the arm matching Params.Breaker
 // may be supplied. Prefix optionally locks complete lines from this preparation;
-// continuation supports only NoHyphenation and a first-fit suffix. Suffix widths,
-// skips, first-fit settings and unconsumed atomic boxes may change. A nonempty
-// prefix requires identical LineLayout values and consumed atomic boxes.
+// continuation supports NoHyphenation or ExplicitHyphenation with a first-fit
+// suffix. Suffix widths, skips, first-fit settings and unconsumed atomic boxes
+// may change. A nonempty prefix requires identical LineLayout values and consumed
+// atomic boxes.
 type TrialRequest struct {
 	Layout     LayoutRequest
 	Shape      khipu.LineShape
