@@ -18,7 +18,7 @@ import (
 
 func fixture(t *testing.T) *layout.Fragment {
 	t.Helper()
-	r, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("aa\naa\naa")}, paragraph.Params{
+	r, err := layoutText(paragraph.Input{Text: styled.TextFromString("aa\naa\naa")}, paragraph.Params{
 		Constraints: paragraph.Constraints{Width: 30 * dimen.BP}, Breaker: paragraph.FirstFit,
 		Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight}, LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.NormalHeight}},
 	}, khipu.Config{Streaming: &khipu.StreamingConfig{Resolver: helpers.DefaultStyleResolver{}, Defaults: contracts.ResolvedRunStyle{Font: helpers.NewSyntheticFont(), EmSize: 10 * dimen.BP}, NewShaper: func() (contracts.StreamingShaper, error) { return helpers.NewSyntheticStreamingShaper(8) }}})

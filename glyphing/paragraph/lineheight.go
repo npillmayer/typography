@@ -57,7 +57,7 @@ type LineHeightSpan struct {
 // surviving spaces use resolved source styles. Discarded spaces do not contribute.
 // Text uses baseline alignment; Prepared.Layout adds bottom-margin-edge atomic
 // alignment. CSS edge computation and height-constrained packing are external.
-// Keep these values stable during Run/Layout; each call copies the range slice,
+// Keep these values stable during preparation/layout; each call copies the range slice,
 // and results retain only geometry.
 type LineLayout struct {
 	Default LineHeight

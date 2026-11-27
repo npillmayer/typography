@@ -7,8 +7,8 @@
 // inputs for later Trial.Assemble. Trial.Checkpoint locks a compatible prefix
 // for a first-fit suffix trial; it does not schedule frames or implement a page
 // builder. Keep preparation only while further searches/measurement are needed.
-// Prepared.StartFlow and Continuation.Fit support NoHyphenation frame flow:
-// equal widths reuse geometry, changed widths lock accepted boundaries and fully
-// assemble a first-fit suffix using the retained preparation. Drop working tokens
-// after each paragraph finishes; completed fragments need no preparation handle.
+// Trial.FitPrefixes selects exact frozen prefixes and checkpoints. PrefixFit.Refit
+// consumes a fitting prefix and reuses the remaining geometry at another height;
+// changed widths require a new trial with the selected checkpoint. Drop working
+// trials/checkpoints after completion; frozen fragments need no preparation handle.
 package paragraph

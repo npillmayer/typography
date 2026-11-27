@@ -24,7 +24,7 @@ import (
 // Glyph coverage is the caller's responsibility. This adds no validation pass:
 // ordinary text uses the existing itemizer's coverage/fallback behavior, pending
 // its separate relocation. Attached markers bypass style resolution and coverage.
-// With no anchors this delegates to Itemize for text-only compatibility.
+// With no anchors this uses Itemize's text-only path.
 func (r *StyleMapper) ItemizeInline(text string, spans []typestyle.Span,
 	atomics []contracts.AtomicAnchor) (styled.Text, []FontTextRun, error) {
 	if !utf8.ValidString(text) {

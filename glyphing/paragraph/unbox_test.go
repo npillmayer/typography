@@ -77,7 +77,7 @@ func TestUnboxMixedSizesAndSpaceMetrics(t *testing.T) {
 	for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
 		params := cssParams(breaker, factor(1.5))
 		params.Constraints.Width = 100 * dimen.BP
-		r, err := paragraph.Run(paragraph.Input{Text: text}, params, cfg)
+		r, err := layoutText(paragraph.Input{Text: text}, params, cfg)
 		if err != nil {
 			t.Fatal(err)
 		}

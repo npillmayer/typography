@@ -54,7 +54,7 @@ func TestLayoutPublicationDetachesInputs(t *testing.T) {
 	if _, err := layout.NewVList(input.Frozen, layout.Box{}, nil, nil, nil); err == nil {
 		t.Fatal("suppressed nonempty content")
 	}
-	empty, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("")}, paragraph.Params{
+	empty, err := layoutText(paragraph.Input{Text: styled.TextFromString("")}, paragraph.Params{
 		Constraints: paragraph.Constraints{Width: 100 * dimen.BP}, Breaker: paragraph.FirstFit,
 		Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight}, LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.NormalHeight}},
 	}, khipu.Config{Streaming: &khipu.StreamingConfig{Resolver: helpers.DefaultStyleResolver{}, Defaults: contracts.ResolvedRunStyle{Font: helpers.NewSyntheticFont(), EmSize: 10 * dimen.BP}, NewShaper: func() (contracts.StreamingShaper, error) { return helpers.NewSyntheticStreamingShaper(8) }}})

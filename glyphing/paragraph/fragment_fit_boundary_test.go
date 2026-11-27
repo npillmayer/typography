@@ -22,7 +22,7 @@ func TestFitGeometryOnlyCallBoundary(t *testing.T) {
 		{"breaker in another file", `import ("github.com/npillmayer/khipu"; "github.com/npillmayer/khipu/linebreak/firstfit")
 func fitExtra() { _, _ = firstfit.BreakParagraph(khipu.BreakRequest{}, nil) }`, "forbidden function " + khipuPath + "/linebreak/firstfit.BreakParagraph"},
 		{"method value", `func fitExtra() { var p *Prepared; f := p.Layout; _ = f }`, "forbidden function (*" + paragraphPath + ".Prepared).Layout"},
-		{"function alias", `func fitExtra() { f := Run; _ = f }`, "forbidden function " + paragraphPath + ".Run"},
+		{"function alias", `func fitExtra() { f := Prepare; _ = f }`, "forbidden function " + paragraphPath + ".Prepare"},
 		{"unknown callback", `var fitCallback func(); func fitExtra() { fitCallback() }`, "unresolved callable"},
 		{"pure helper", `import "math"; func fitExtra() { _ = math.Abs(-1) }`, ""},
 	} {

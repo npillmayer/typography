@@ -45,7 +45,7 @@ func TestUnboxFullLineHeightAndEmptyOutput(t *testing.T) {
 			{"", 1, 0, 0, 0},
 		} {
 			for _, width := range []dimen.DU{0, 40 * dimen.BP} {
-				r, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString(tc.text)}, unboxParams(breaker, width, tc.factor), unboxConfig())
+				r, err := layoutText(paragraph.Input{Text: styled.TextFromString(tc.text)}, unboxParams(breaker, width, tc.factor), unboxConfig())
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -96,7 +96,7 @@ func TestUnboxFullLineHeightAndEmptyOutput(t *testing.T) {
 }
 
 func TestUnboxLocalDepthDomain(t *testing.T) {
-	r, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("aa\naa")},
+	r, err := layoutText(paragraph.Input{Text: styled.TextFromString("aa\naa")},
 		unboxParams(paragraph.FirstFit, 40*dimen.BP, 1), unboxConfig())
 	if err != nil {
 		t.Fatal(err)

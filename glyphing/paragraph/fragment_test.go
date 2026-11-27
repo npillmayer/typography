@@ -96,7 +96,7 @@ func checkSplit(t *testing.T, v *layout.VList) {
 func TestFragmentCSSPolicies(t *testing.T) {
 	for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
 		for _, policy := range []paragraph.Params{params(breaker, 30*dimen.BP), cssParams(breaker, factor(.5)), cssParams(breaker, factor(0))} {
-			r, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("aa\n\naa\naa")}, policy, synthetic())
+			r, err := layoutText(paragraph.Input{Text: styled.TextFromString("aa\n\naa\naa")}, policy, synthetic())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -107,7 +107,7 @@ func TestFragmentCSSPolicies(t *testing.T) {
 		}
 	}
 	for _, text := range []string{"", "aa"} {
-		r, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString(text)}, cssParams(paragraph.FirstFit, factor(1)), synthetic())
+		r, err := layoutText(paragraph.Input{Text: styled.TextFromString(text)}, cssParams(paragraph.FirstFit, factor(1)), synthetic())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -204,7 +204,7 @@ func TestFragmentReplacementsNoServiceCalls(t *testing.T) {
 }
 
 func TestFragmentRejectsMalformedVListAndNilInput(t *testing.T) {
-	r, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("aa aa")}, params(paragraph.FirstFit, 15*dimen.BP), synthetic())
+	r, err := layoutText(paragraph.Input{Text: styled.TextFromString("aa aa")}, params(paragraph.FirstFit, 15*dimen.BP), synthetic())
 	if err != nil {
 		t.Fatal(err)
 	}

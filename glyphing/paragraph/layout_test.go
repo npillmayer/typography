@@ -60,7 +60,7 @@ func TestPreparedStylesAndNonDOMMarkup(t *testing.T) {
 		in := paragraph.Input{Text: text, Direction: bidi.LeftToRight, Markup: func(at uint64) int { calls++; return events[at] }}
 		cfg := synthetic()
 		cfg.Streaming.Resolver = resolver{}
-		out, err := paragraph.Run(in, params(b, 100*dimen.BP), cfg)
+		out, err := layoutText(in, params(b, 100*dimen.BP), cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -97,7 +97,7 @@ func TestFreshOwnersAndRetainedResults(t *testing.T) {
 		created.Add(1)
 		return helpers.NewSyntheticStreamingShaper(8)
 	}
-	first, err := paragraph.Run(in, params(paragraph.FirstFit, 25*dimen.BP), cfg)
+	first, err := layoutText(in, params(paragraph.FirstFit, 25*dimen.BP), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestFreshOwnersAndRetainedResults(t *testing.T) {
 	var wg sync.WaitGroup
 	for _, b := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
 		wg.Go(func() {
-			out, e := paragraph.Run(in, params(b, 45*dimen.BP), cfg)
+			out, e := layoutText(in, params(b, 45*dimen.BP), cfg)
 			if e != nil || out.Frozen == first.Frozen {
 				t.Error("fresh invocation failed", e)
 			}
@@ -140,7 +140,7 @@ func TestInjectedHyphenationAndEmptyInput(t *testing.T) {
 	for _, b := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
 		cfg := synthetic()
 		cfg.Hyphenator = softHyphens{}
-		out, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("ab\u00adcd")}, params(b, 15*dimen.BP), cfg)
+		out, err := layoutText(paragraph.Input{Text: styled.TextFromString("ab\u00adcd")}, params(b, 15*dimen.BP), cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -155,19 +155,19 @@ func TestInjectedHyphenationAndEmptyInput(t *testing.T) {
 		if !replacement {
 			t.Fatal("missing replacement provenance")
 		}
-		empty, err := paragraph.Run(paragraph.Input{}, params(b, 30*dimen.BP), synthetic())
+		empty, err := layoutText(paragraph.Input{}, params(b, 30*dimen.BP), synthetic())
 		if err != nil || empty.VList == nil || empty.Frozen.SourceLen() != 0 {
 			t.Fatal("empty paragraph", err)
 		}
 	}
 }
 
-func TestRunValidationAndServiceErrors(t *testing.T) {
+func TestPreparationAndLayoutValidationAndServiceErrors(t *testing.T) {
 	input := paragraph.Input{Text: styled.TextFromString("aa")}
 	p := params(paragraph.FirstFit, 30*dimen.BP)
 	check := func(in paragraph.Input, p paragraph.Params, cfg khipu.Config, stage paragraph.Stage, cause error) {
 		t.Helper()
-		out, err := paragraph.Run(in, p, cfg)
+		out, err := layoutText(in, p, cfg)
 		var e *paragraph.Error
 		if out != nil || !errors.As(err, &e) || e.Stage != stage || !errors.Is(err, cause) {
 			t.Fatalf("result=%v error=%v want stage=%s cause=%v", out, err, stage, cause)
@@ -186,5 +186,5 @@ func TestRunValidationAndServiceErrors(t *testing.T) {
 	sentinel := errors.New("shaper failure")
 	cfg := synthetic()
 	cfg.Streaming.NewShaper = func() (contracts.StreamingShaper, error) { return nil, sentinel }
-	check(input, p, cfg, paragraph.StageEncode, sentinel)
+	check(input, p, cfg, paragraph.StagePrepare, sentinel)
 }

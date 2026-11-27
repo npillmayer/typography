@@ -45,16 +45,12 @@ func resultMaterial(r *Result) []any {
 // succeeds or fails. Exercise the low-level seam alongside the public Trial tests.
 func TestRetainedTikraySurvivesLaterLayouts(t *testing.T) {
 	p, request := reflowPreparation(t)
-	b, err := p.bindLayout(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	plan, err := breakLayout(breakRequest(b.bound, p.discovery, b.geometry), b.params.Breaker)
+	trial, err := p.Trial(TrialRequest{Layout: request})
 	if err != nil {
 		t.Fatal(err)
 	}
 	assemble := func() []any {
-		r, err := finishWithPlan(plan, b.bound.KnotCount(), b.params, p.text, p.config, p.runs, b.boxes)
+		r, err := trial.Assemble()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -90,24 +86,41 @@ type reflowWeakHandles struct {
 func reflowLifetime(t *testing.T) (reflowWeakHandles, []*layout.Fragment) {
 	t.Helper()
 	p, request := reflowPreparation(t)
-	c, err := p.StartFlow(request)
+	first, err := p.Trial(TrialRequest{Layout: request})
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := c.Fit(Frame{Width: 40 * dimen.BP, Height: 10})
-	if err != nil || a.Continuation == nil {
-		t.Fatal("expected initial remainder", err)
+	choices, err := first.FitPrefixes(10)
+	if err != nil {
+		t.Fatal(err)
 	}
-	b, err := a.Continuation.Fit(Frame{Width: 25 * dimen.BP, Height: 10})
-	if err != nil || b.Continuation == nil {
-		t.Fatal("expected continued remainder", err)
+	a, err := choices.Select(1)
+	if err != nil {
+		t.Fatal(err)
 	}
-	done, err := b.Continuation.Fit(Frame{Width: 25 * dimen.BP, Height: 1000})
-	if err != nil || done.Continuation != nil || !done.Reused {
-		t.Fatal("expected equal-width completion", err)
+	request.Params.Constraints.Width = 25 * dimen.BP
+	continued, err := p.Trial(TrialRequest{Layout: request, Prefix: a.Checkpoint()})
+	if err != nil {
+		t.Fatal(err)
 	}
-	return reflowWeakHandles{weak.Make(p), weak.Make(p.content), weak.Make(p.discovery), weak.Make(c.plan), weak.Make(b.Continuation.plan)},
-		[]*layout.Fragment{a.Placed, b.Placed, done.Placed}
+	choices, err = continued.FitPrefixes(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := choices.Select(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tail, err := choices.Refit(1, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, err := tail.Select(tail.Prefixes()[0].Lines)
+	if err != nil || done.Info().Status != FitComplete || done.Checkpoint() != nil {
+		t.Fatal("expected completion", err)
+	}
+	return reflowWeakHandles{weak.Make(p), weak.Make(p.content), weak.Make(p.discovery), weak.Make(first.plan), weak.Make(continued.plan)},
+		[]*layout.Fragment{a.Fragment(), b.Fragment(), done.Fragment()}
 }
 
 func TestFrozenFragmentsReleaseMaterialDiscoveryAndTikrays(t *testing.T) {
@@ -131,4 +144,37 @@ func TestFrozenFragmentsReleaseMaterialDiscoveryAndTikrays(t *testing.T) {
 		t.Fatal("lost retained source")
 	}
 	runtime.KeepAlive(fragments)
+}
+
+func refitPredecessor(t *testing.T) (weak.Pointer[PrefixFit], *PrefixFit) {
+	t.Helper()
+	p, request := reflowPreparation(t)
+	trial, err := p.Trial(TrialRequest{Layout: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := trial.FitPrefixes(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := original.Refit(1, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return weak.Make(original), next
+}
+
+func TestPrefixRefitDoesNotRetainPredecessor(t *testing.T) {
+	predecessor, tail := refitPredecessor(t)
+	for range 5 {
+		runtime.GC()
+	}
+	if predecessor.Value() != nil {
+		t.Fatal("refit retained its predecessor")
+	}
+	completed, err := tail.Select(tail.Prefixes()[0].Lines)
+	if err != nil || completed.Checkpoint() != nil {
+		t.Fatal("retained tail unusable", err)
+	}
+	runtime.KeepAlive(tail)
 }

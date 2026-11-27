@@ -19,7 +19,7 @@ const khipuPath = "github.com/npillmayer/khipu"
 // their bodies are inspected recursively, including private helpers in any file.
 var auditLeaves = map[string]bool{
 	"errors.New": true, "fmt.Errorf": true, "math.Abs": true, "math.IsNaN": true,
-	"math.IsInf": true, "math.Max": true, "slices.Clone": true,
+	"math.IsInf": true, "math.Max": true, "slices.Clone": true, "slices.IndexFunc": true, "slices.Reverse": true,
 }
 
 var auditEntries = map[string]bool{

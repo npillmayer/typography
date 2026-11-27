@@ -106,15 +106,12 @@ Its explicit reuse key retains no preparation or services. It performs no font
 queries, binding or rebreaking.
 See [equal-width height cuts](glyphing/paragraph/README.md#equal-width-height-cuts).
 
-`Prepared.StartFlow` and `Continuation.Fit` add bounded NoHyphenation frame flow:
-retain equal-width lines, or lock accepted breakpoints and fully assemble a
-first-fit continuation at a new width. Keep preparation only until each paragraph
-finishes, then retain its frozen fragments. See [frame flow](glyphing/paragraph/README.md#checkpoint-based-frame-flow).
-`render.BuildFragmentProof` renders retained ranges without relayout; tytui's
-documentlayout composes positioned fragments and fixed opaque interiors for
-proof/SVG export. Tytui/documentlayout now supplies bounded single-paragraph frame scheduling and
-`tycli --frames` export. P6 validates this opt-in, bounded profile; see the
-[production cost report](doc/FLOW_COSTS.md) for measurements and remaining limits.
+`Prepared.Trial`, `Trial.FitPrefixes` and `PrefixFit.Select` pair exact frozen
+prefixes with checkpoints. `PrefixFit.Refit` reuses the captured tail at another
+height without services or rebreaking; new widths use a checkpoint and a new
+trial. See [frame flow](glyphing/paragraph/README.md#checkpoint-based-frame-flow).
+`render.BuildFragmentProof` renders retained ranges without relayout. Frame
+scheduling and placement of opaque object interiors belong to the application.
 
 Replay is application-owned. Resource identities and CSS proof controls remain unchanged;
 current replay is CSS-only version 5 and rejects earlier formats. This adds no page layout, font discovery, coverage
@@ -123,7 +120,7 @@ policy, rasterization or generalized paint model.
 ## Verification
 
 Run go test ./..., go test -race ./..., go build ./... and go vet ./... in this
-module and sibling tytui. Root dependency audits enforce the branch boundaries.
+module. Root dependency audits enforce the branch boundaries.
 Unit tests stay with their owners; [integration](integration/README.md) contains cross-phase
 tests. Real font fixtures remain in sibling opentype; no fonts are copied.
 

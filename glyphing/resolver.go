@@ -61,11 +61,12 @@ func familyMatches(list, want string) bool {
 	return false
 }
 
-// ResolveStyle accepts projected TypographyStyle, legacy document style.Style,
-// and private styles returned by itemization. Nil preserves defaults. Document
-// paint is ignored; other style implementations are rejected. Feature slices are
-// detached, and itemized feature windows clip/rebase defaults without losing their
-// original scalar domains. Keep itemized style values intact when passing them on.
+// ResolveStyle accepts document style.Style, projected TypographyStyle, and
+// private styles returned by itemization. Document styles support projection and
+// owner resolution; paint is ignored. Nil preserves defaults. Other style
+// implementations are rejected. Returned feature slices are detached. Itemized
+// feature windows clip/rebase defaults without losing their original scalar
+// domains. Keep itemized style values intact when passing them on.
 func (r *StyleMapper) ResolveStyle(value styled.Style, defaults contracts.ResolvedRunStyle) (contracts.ResolvedRunStyle, error) {
 	if item, ok := value.(runStyle); ok {
 		var css styled.Style
@@ -97,7 +98,7 @@ func (r *StyleMapper) ResolveStyle(value styled.Style, defaults contracts.Resolv
 	}
 	var css typestyle.Typography
 	switch v := value.(type) {
-	case typestyle.Style: // Compatibility input; document paint is ignored.
+	case typestyle.Style: // Resolve typography independently of document paint.
 		css = v.Typography()
 	case TypographyStyle:
 		css = v.Typography

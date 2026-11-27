@@ -1,3 +1,8 @@
+> This document records design or measurements from an earlier execution API.
+> For the supported preparation, trial, checkpoint and prefix-refitting APIs,
+> use the [paragraph guide](../glyphing/paragraph/README.md). Historical timings
+> are not measurements of the current implementation.
+
 # P6 production flow costs and release decision
 
 Reflow PR 2 note (2026-11-20): the recorded timings below predate the immutable

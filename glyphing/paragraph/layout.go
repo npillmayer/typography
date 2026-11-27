@@ -17,11 +17,11 @@ import (
 )
 
 // Input is one already prepared paragraph. Text retains its exact styles and
-// UTF-8 byte coordinates: Run neither normalizes whitespace nor projects styles
+// UTF-8 byte coordinates: Prepare neither normalizes whitespace nor projects styles
 // or itemizes again. Use M's Itemize/ProjectStyles before this boundary, or supply
 // equivalent typography-only styles with a matching resolver. Paint stays with
 // the rendering consumer. Markup supplies zero-byte isolates in processed text;
-// its callback is consumed by Run/Prepare and is not retained. Source styles and
+// its callback is consumed by Prepare and is not retained. Source styles and
 // services must remain stable for prepared and frozen results. Atomics select
 // U+FFFC occurrences; mixed input uses Prepare/Layout. No DOM types enter here.
 type Input struct {
@@ -67,8 +67,6 @@ const (
 	StageInput Stage = "input"
 	// StageParagraph identifies bidi paragraph construction.
 	StageParagraph Stage = "paragraph"
-	// StageEncode identifies text-only Run encoding.
-	StageEncode Stage = "encode"
 	// StagePrepare identifies reusable horizontal preparation.
 	StagePrepare Stage = "prepare"
 	// StageMeasure identifies intrinsic evaluation after entry validation.
@@ -113,76 +111,13 @@ type Result struct {
 	EncodedKnots, BreakCount int
 }
 
-// Run prepares bidi levels, encodes, breaks, freezes, then assembles a boxed vlist.
-// It accepts text-only input; nonempty Atomics fails at StageInput because Run
-// has no object geometry. Use Prepare/Layout for mixed or reusable layout.
-// It creates fresh immutable material and an independent trial, then freezes
-// before returning. No material, discovery or trial handle is published. Config uses
-// khipu's existing service contracts (including hyphenation). CSS assembly
-// requires explicit streaming font/size/resolver defaults. Streaming is supplied
-// by the caller; its factory must return fresh exclusive shapers. Config.Params governs encoder
-// policy; line geometry is the selected breaker's rectangular default profile.
-// CSSLineHeight uses Streaming.Defaults as its font/size strut.
-//
-// Services/styles must obey their immutable-lifetime contracts and remain usable
-// for retained results. Run does not acquire fonts or rendering services. Errors
-// return nil results and preserve backend causes. Execution is synchronous;
-// streaming coordination cancels and joins producers internally on failure.
-func Run(input Input, params Params, config khipu.Config) (*Result, error) {
-	fail := func(stage Stage, err error) (*Result, error) { return nil, &Error{stage, err} }
-
-	if len(input.Atomics) != 0 || (input.Direction != bidi.LeftToRight && input.Direction != bidi.RightToLeft) {
-		return fail(StageInput, invalidInput("Run requires text-only input and a valid direction"))
-	}
-	var err error
-	params, err = validateParams(params, input.Text, config)
-	if err != nil {
-		return fail(StageInput, err)
-	}
-	// Copy the persistent text handle; never rebuild its projected/private styles.
-	text := input.Text
-	para, err := styled.ParagraphFromText(&text, 0, text.Raw().Len(), input.Direction, input.Markup)
-	if err != nil {
-		return fail(StageParagraph, err)
-	}
-	var runs []bidi.Segment
-	for run := range para.BidiLevels().LogicalSegments() {
-		runs = append(runs, run)
-	}
-
-	owner := khipu.NewKhipukamayuq(config)
-	encoded, discovery, err := owner.EncodeParagraph(para)
-	if err != nil {
-		return fail(StageEncode, err)
-	}
-	bound, err := khipu.BindParagraph(encoded, nil)
-	if err != nil {
-		return fail(StageBind, err)
-	}
-	return finishLayout(bound, discovery, params, layoutGeometry(params, nil), text, config, runs, nil)
-}
-
-// finishLayout creates an independent trial and publishes only a complete result.
-func finishLayout(bound *khipu.AtomicBinding, discovery *khipu.Discovery, params Params, geometry khipu.Params, text styled.Text, config khipu.Config, runs []bidi.Segment, atomics map[contracts.AtomicID]AtomicBox) (*Result, error) {
-	plan, err := breakLayout(breakRequest(bound, discovery, geometry), params.Breaker)
-	if err != nil {
-		return nil, err
-	}
-	return finishWithPlan(plan, bound.KnotCount(), params, text, config, runs, atomics)
-}
-
 func breakRequest(bound *khipu.AtomicBinding, discovery *khipu.Discovery, geometry khipu.Params) khipu.BreakRequest {
 	return khipu.BreakRequest{Binding: bound, Discovery: discovery, Geometry: khipu.GeometryRequest{
 		Shape: geometry.LineShape, LeftSkip: geometry.LeftSkip, RightSkip: geometry.RightSkip,
 	}}
 }
 
-func breakLayout(request khipu.BreakRequest, breaker Breaker) (*khipu.Tikray, error) {
-	return searchTrial(request, breaker, nil, nil)
-}
-
-// finishWithPlan is shared by ordinary layout and checkpoint continuation.
-// Freezing consumes only the trial's captured geometry and selected alternatives.
+// finishWithPlan freezes captured decisions and assembles their CSS geometry.
 func finishWithPlan(plan *khipu.Tikray, encodedKnots int, params Params, text styled.Text, config khipu.Config, runs []bidi.Segment, atomics map[contracts.AtomicID]AtomicBox) (*Result, error) {
 	fail := func(stage Stage, err error) (*Result, error) { return nil, &Error{stage, err} }
 	positions, err := plan.BreakpointPositions()

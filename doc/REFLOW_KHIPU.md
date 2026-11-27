@@ -1,3 +1,8 @@
+> This document records design or measurements from an earlier execution API.
+> For the supported preparation, trial, checkpoint and prefix-refitting APIs,
+> use the [paragraph guide](../glyphing/paragraph/README.md). Historical timings
+> are not measurements of the current implementation.
+
 # Stage 1: immutable Khipu and independent reflow decisions
 
 Design specification, 2026-11-19. The khipu contracts are implemented by PR 1

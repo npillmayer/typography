@@ -35,7 +35,15 @@ are preserved. Serialize operations sharing a `StyleMapper`.
 
 The mapper implements `contracts.StyleResolver`. `Defaults()` supplies the default
 font and size for paragraph execution; khipu constructs `FontInstance` values
-from resolved runs. Concrete loading/coverage/streaming services live in
+from resolved runs. `ResolveStyle` accepts document `style.Style` values for
+projection and owner defaults, projected `TypographyStyle` values, and the private
+styles returned by itemization. Nil preserves the supplied defaults.
+
+`TypographyStyle` implements `cords/styled.Style`, carrying typography without
+paint and preserving feature-domain identity. Keep returned projected/itemized
+values intact. Khipu receives opaque styles through cords and interprets them
+through the injected resolver; it does not need the concrete glyphing style types.
+Concrete loading/coverage/streaming services live in
 [adapter/opentype](adapter/opentype/README.md).
 
 ## Itemize without losing Context

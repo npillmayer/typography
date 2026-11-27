@@ -1,13 +1,3 @@
-## glyphing/
-
-Context policy (2026-11-19): typesetting, geometry, retained proofs, replay,
-and document execution are synchronous and have no context argument. Contexts
-are confined to streaming coordination and font discovery/loading. Streaming
-callers create a local background context; consumer failure still cancels and
-joins the producer before cleanup. Errors publish no partial result and preserve
-previous immutable output. TUI layout jobs finish serially; stale results are
-discarded, while font work remains cancellable. This supersedes earlier
-cancellation requirements for typesetting in this document.
 # Paragraph
 
 Package "paragraph" orchestrates the translation of paragraphs of text into
@@ -29,12 +19,12 @@ Assembly implements [VList assembly](../../doc/VLIST_CONTRACT.md).
 
 | Task | Function(s) |
 | --- | --- |
-| Lay out text once | `Run` |
+| Lay out text once | `Prepare`, then `Prepared.Layout` |
 | Measure or lay out the same text at several widths, or include inline objects | `Prepare`, then `Prepared.MeasureIntrinsic` / `Prepared.Layout` |
 | Retain independent candidates and assemble one later | `Prepared.Trial`, `Trial.Plan`, `Trial.Assemble` |
 | Lock accepted lines and search a changed suffix | `Trial.Checkpoint`, then `Prepared.Trial` with `Prefix` |
 | Inspect all fitting line prefixes and choose one | `Trial.FitPrefixes`, `PrefixFit.Prefixes`, `PrefixFit.Select` |
-| Flow a paragraph through frames, possibly of different widths | `Prepared.StartFlow`, then `Continuation.Fit` |
+| Reuse fitted geometry at another height | `PrefixFit.Refit` |
 | Divide an existing layout without rebreaking | `Fragment`, then `SplitFragment` or `FitFragment` |
 
 ## Lay out Text once
@@ -68,7 +58,9 @@ params := paragraph.Params{
         Default: paragraph.LineHeight{Kind: paragraph.NormalHeight},
     },
 }
-result, err := paragraph.Run(input, params, config)
+prepared, err := paragraph.Prepare(input, khipu.PrepareOptions{Hyphenation: khipu.NoHyphenation}, config)
+if err != nil { return err }
+result, err := prepared.Layout(paragraph.LayoutRequest{Params: params})
 if err != nil { return err }
 fmt.Printf("%d lines, %.2f bp high\n",
     len(result.VList.Lines()), result.VList.Box().Extent)
@@ -76,7 +68,7 @@ fmt.Printf("%d lines, %.2f bp high\n",
 
 Other backends supply their own compatible resolver, default face and shaper
 factory through the same contracts. Khipu manages streaming and cleanup.
-`Run` accepts text only; use `Prepare` for attached inline objects.
+Use the same preparation path for text and attached inline objects.
 Use `bidi.RightToLeft` for an RTL paragraph; `Input.Markup` optionally supplies
 zero-byte bidi isolates at processed-text byte positions.
 
@@ -207,11 +199,9 @@ and release the others. Serialize calls using shared services. Keep preparation
 only while more searches/measurement are possible; release it and checkpoints
 when the paragraph finishes or is abandoned. A trial needs neither preparation
 nor discovery for later assembly, and frozen output retains neither trials nor
-checkpoints. This API does not select frames or build pages. For unchanged-width
-frame flow, continue using `StartFlow`/`Continuation.Fit`; its equal-width branch
-reuses geometry with zero service or breaker calls. `Trial` always requests a
-search and does not infer that fast path. See the
-[trial contracts](../../doc/REFLOW_PR4.md).
+checkpoints. Frame scheduling belongs to the caller. For unchanged widths and
+atomic geometry, use `PrefixFit.Refit` to reuse assembled geometry without service
+or breaker calls. `Trial` always requests a search.
 
 ## Choose a fitting paragraph prefix
 
@@ -290,15 +280,14 @@ For manual input, supply an explicit `Config.Hyphenator` and prepare with
 locks its exact replacement pair in the checkpoint; the post-break half starts
 the next suffix once, including zero-width material. `Info().To.Offset` records
 the original source split, not generated spelling length. Equal or changed
-suffix widths use the same `Prepared.Trial`/`FitPrefixes`/`Select` sequence.
+suffix widths can use `Prepared.Trial`/`FitPrefixes`/`Select`; unchanged geometry
+can also use `PrefixFit.Refit` without discovering any new alternatives.
 Later authored alternatives may invoke lazy replacement services; base text and
 accepted alternatives are never prepared again. Failed services publish no trial
 and leave previous choices/checkpoints usable for retry. Unsupported policy
 errors remain distinguishable from a successful `FitNoProgress`.
 
 Automatic continuation is unsupported. The carried half is not recursively split.
-The separate `StartFlow` convenience API continues to require `NoHyphenation`;
-manual fitting uses the explicit trial/prefix API above.
 
 ## Measure intrinsic Widths
 
@@ -355,47 +344,43 @@ order; do not sort them by X. The application lays out and paints object interio
 
 ## Checkpoint-based Frame Flow
 
-Prepare with `NoHyphenation`, then start a flow at the first frame's width:
+See the executable [height-refitting example](prefix_refit_example_test.go).
+
+Start with one trial at the first receiver's width, then choose its longest
+fitting prefix. Keep the choice set for height-only reuse:
 
 ```go
-frames := []paragraph.Frame{
-    {Width: 240 * dimen.BP, Height: 120}, // Height is in big points, not DU.
-    {Width: 180 * dimen.BP, Height: 180},
-}
-flowRequest := paragraph.LayoutRequest{Params: params}
-flowRequest.Params.Constraints.Width = frames[0].Width
-token, err := prepared.StartFlow(flowRequest)
+trial, err := prepared.Trial(paragraph.TrialRequest{Layout: request})
 if err != nil { return err }
-var placed []*layout.Fragment
-for _, frame := range frames {
-    step, err := token.Fit(frame)
-    if err != nil { return err } // The input token remains retryable.
-    placed = append(placed, step.Placed)
-    token = step.Continuation
-    if token == nil { break }
-}
-fmt.Printf("%d frames visited; complete: %t\n", len(placed), token == nil)
+choices, err := trial.FitPrefixes(120)
+if err != nil { return err }
+first, err := choices.Select(choices.Prefixes()[0].Lines)
+if err != nil { return err }
+
+// Same width and atomic geometry: consume the selected lines and fit the tail.
+next, err := choices.Refit(first.Info().Lines, 180)
+if err != nil { return err }
+second, err := next.Select(next.Prefixes()[0].Lines)
+if err != nil { return err }
+fmt.Println(second.Info().Status, next.Remainder().Box())
 ```
 
-A nonnil final token means unfinished content: retain it for more frames or retry.
-`FitNoProgress` means no line fits; offer more height or stop rather than retrying
-forever. `FitContinues` means some content was placed; `FitComplete` ends the flow.
-`Overfull` reports horizontally overfull line indexes in that call's frozen owner,
-including unplaced lines; vertical completion does not imply horizontal fit.
+`Refit(0, height)` changes only the available height. The accepted count must be
+eligible in the original set, so a previous height limit cannot be bypassed when
+advancing. Earlier choices remain reusable. `Remainder()` exposes the set's frozen
+unaccepted range; it retains no working preparation or trial.
 
-Keep each `Placed` fragment independently and add the frame's origin when drawing
-it with `render.BuildFragmentProof`. Equal widths reuse retained lines (`Reused`
-is true). A width change preserves accepted breakpoints and rebreaks the suffix
-using first-fit, even after an initial Knuth–Plass layout. Paragraph styles, bidi
-context, line-height, skips and object boxes stay fixed; frame styles do not alter
-text. Changed layout inputs require a new flow, and source/style/font changes
-require new preparation. `token.Remainder()` gives the current frozen tail.
+For a width or unconsumed-object change, select a checkpoint and pass it to a new
+`Prepared.Trial` with first-fit suffix parameters. After refitting, `Select(0)`
+certifies all previously consumed lines without accepting more. The checkpoint
+preserves full width history, even when the initial prefix used Knuth–Plass.
 
-Process paragraphs in turn. After completion or abandonment, drop the preparation
-and **all** old tokens; retain only frozen fragments and the stable services they
-need. There is no `Close` or implicit cross-paragraph cache. Frame scheduling,
-surrounding margins, widows/orphans and fragmentation inside objects belong to
-the application; this API places whole lines without height packing.
+`FitNoProgress` means no line fits; try another receiver or stop. `FitContinues`
+means a remainder exists; `FitComplete` needs no checkpoint. Horizontal overflow
+remains independent of vertical completion. Preserve frozen fragments separately
+for rendering and add each frame's origin there. Release preparations, trials,
+choice sets and checkpoints when finished. Frame scheduling and surrounding
+margins stay with the caller; there is no height stretching or implicit cache.
 
 ## Equal-Width Height Cuts
 
@@ -430,7 +415,7 @@ The nonzero IDs are caller-managed revisions; change the relevant ID when an
 input changes. Nonzero skips must be recorded as their original
 `[natural, minimum, maximum]` DU triples. Source and target keys must match exactly;
 they attest inputs that geometry alone cannot verify. Mismatch returns
-`ErrIncompatibleFragment`. Use `Continuation.Fit` for owners containing different
+`ErrIncompatibleFragment`. Use `PrefixFit.Refit` for captured geometry with different
 line widths. Both fitting APIs share the completion statuses described above.
 `FragmentFit.Overfull` also includes unplaced lines.
 

@@ -77,9 +77,9 @@ not change VList's full-paragraph contract. Fragments retain stable frozen
 services and can retain the whole paragraph in memory. `render.BuildFragmentProof`
 consumes these placements without restacking; working preparation is not retained.
 For compatible uniform-width owners, `paragraph.FitFragment` selects the longest
-whole-line prefix fitting an available height. `Prepared.StartFlow` and
-`Continuation.Fit` handle width changes and heterogeneous width history in the
-paragraph package; shared layout values contain no working preparation or tokens.
+whole-line prefix fitting an available height. `Prepared.Trial` and
+checkpoints handle width changes; `PrefixFit.Refit` reuses mixed-width geometry
+at another height in the paragraph package; shared layout values contain no working preparation or tokens.
 See [paragraph flow](../glyphing/paragraph/README.md#checkpoint-based-frame-flow).
 Target-height packing and serialization remain deferred.
 

@@ -1,3 +1,8 @@
+> This document records design or measurements from an earlier execution API.
+> For the supported preparation, trial, checkpoint and prefix-refitting APIs,
+> use the [paragraph guide](../glyphing/paragraph/README.md). Historical timings
+> are not measurements of the current implementation.
+
 # Paragraph flow across frames of different sizes
 
 Context policy (2026-11-19): typesetting, geometry, retained proofs, replay,

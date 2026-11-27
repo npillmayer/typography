@@ -76,20 +76,37 @@ func fragmentRenderFixture(t *testing.T, width dimen.DU) (render.ParagraphInput,
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := p.StartFlow(req)
+	trial, err := p.Trial(paragraph.TrialRequest{Layout: req})
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := c.Fit(paragraph.Frame{Width: 40 * dimen.BP, Height: 10})
-	if err != nil || a.Continuation == nil {
-		t.Fatal("first frame", err)
+	choices, err := trial.FitPrefixes(10)
+	if err != nil {
+		t.Fatal(err)
 	}
-	b, err := a.Continuation.Fit(paragraph.Frame{Width: width * dimen.BP, Height: 1000})
-	if err != nil || b.Continuation != nil {
+	a, err := choices.Select(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tail *paragraph.PrefixFit
+	if width == 40 {
+		tail, err = choices.Refit(1, 1000)
+	} else {
+		req.Params.Constraints.Width = width * dimen.BP
+		trial, err = p.Trial(paragraph.TrialRequest{Layout: req, Prefix: a.Checkpoint()})
+		if err == nil {
+			tail, err = trial.FitPrefixes(1000)
+		}
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := tail.Select(tail.Prefixes()[0].Lines)
+	if err != nil || b.Checkpoint() != nil {
 		t.Fatal("completion", err)
 	}
 	sealed, face.deny = true, true
-	return render.ParagraphInput{Frozen: full.Frozen, VList: full.VList, Text: text, Paint: []style.PaintSpan{{Start: 0, End: 3, Paint: style.Paint{Color: "red"}}, {Start: 3, End: uint64(len(text)), Paint: style.Paint{Color: "navy"}}}}, []*layout.Fragment{a.Placed, b.Placed}, weak.Make(p)
+	return render.ParagraphInput{Frozen: full.Frozen, VList: full.VList, Text: text, Paint: []style.PaintSpan{{Start: 0, End: 3, Paint: style.Paint{Color: "red"}}, {Start: 3, End: uint64(len(text)), Paint: style.Paint{Color: "navy"}}}}, []*layout.Fragment{a.Fragment(), b.Fragment()}, weak.Make(p)
 }
 
 func TestFragmentProofFlowAndCollectedPreparation(t *testing.T) {

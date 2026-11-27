@@ -40,7 +40,7 @@ func TestLineHeightExactGeometryAndInheritance(t *testing.T) {
 			{factor(1.5), 15, 10.5}, {length(20 * dimen.BP), 20, 13},
 			{factor(.5), 5, 5.5}, {factor(0), 0, 3},
 		} {
-			out, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("aa aa")}, cssParams(b, tc.h), synthetic())
+			out, err := layoutText(paragraph.Input{Text: styled.TextFromString("aa aa")}, cssParams(b, tc.h), synthetic())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -83,7 +83,7 @@ func TestLineHeightExactGeometryAndInheritance(t *testing.T) {
 		} {
 			p := cssParams(b, tc.h)
 			p.Constraints.Width = 100 * dimen.BP
-			out, err := paragraph.Run(paragraph.Input{Text: text}, p, cfg)
+			out, err := layoutText(paragraph.Input{Text: text}, p, cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -100,13 +100,13 @@ func TestLineHeightRangesDoNotChangeHorizontalOutput(t *testing.T) {
 		cfg := synthetic()
 		p := cssParams(b, factor(1))
 		p.Constraints.Width = 100 * dimen.BP
-		before, err := paragraph.Run(input, p, cfg)
+		before, err := layoutText(input, p, cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
 		// Interior range of one shaped word; no style or shaping boundary introduced.
 		p.LineLayout.Runs = []paragraph.LineHeightSpan{{Start: 1, End: 2, Height: factor(3)}}
-		out, err := paragraph.Run(input, p, cfg)
+		out, err := layoutText(input, p, cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,7 +130,7 @@ func TestLineHeightRangesDoNotChangeHorizontalOutput(t *testing.T) {
 		// Run override below default cannot reduce the paragraph strut.
 		p.LineLayout.Default = factor(4)
 		p.LineLayout.Runs = []paragraph.LineHeightSpan{{Start: 0, End: 7, Height: factor(1)}}
-		out, err = paragraph.Run(input, p, cfg)
+		out, err = layoutText(input, p, cfg)
 		if err != nil || out.VList.Box().Extent != 40 {
 			t.Fatal("strut", out, err)
 		}
@@ -148,7 +148,7 @@ func TestLineHeightSpaceAndDiscretionaryContributions(t *testing.T) {
 	for _, b := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
 		p := cssParams(b, factor(1))
 		p.Constraints.Width = 100 * dimen.BP
-		out, err := paragraph.Run(paragraph.Input{Text: text}, p, cfg)
+		out, err := layoutText(paragraph.Input{Text: text}, p, cfg)
 		if err != nil || out.VList.Box().Extent != 30 {
 			t.Fatal("surviving styled space", out, err)
 		}
@@ -158,7 +158,7 @@ func TestLineHeightSpaceAndDiscretionaryContributions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		out, err = paragraph.Run(paragraph.Input{Text: trailing}, p, cfg)
+		out, err = layoutText(paragraph.Input{Text: trailing}, p, cfg)
 		if err != nil || out.VList.Box().Extent != 10 {
 			t.Fatal("trimmed space", out, err)
 		}
@@ -167,7 +167,7 @@ func TestLineHeightSpaceAndDiscretionaryContributions(t *testing.T) {
 		p = cssParams(b, factor(1))
 		p.Constraints.Width = 15 * dimen.BP
 		p.LineLayout.Runs = []paragraph.LineHeightSpan{{Start: 2, End: 4, Height: factor(3)}}
-		out, err = paragraph.Run(paragraph.Input{Text: styled.TextFromString("ab\u00adcd")}, p, cfg)
+		out, err = layoutText(paragraph.Input{Text: styled.TextFromString("ab\u00adcd")}, p, cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -202,21 +202,21 @@ func TestLineHeightValidationAndEmpty(t *testing.T) {
 	} {
 		p := cssParams(paragraph.FirstFit, factor(1))
 		change(&p)
-		out, err := paragraph.Run(in, p, cfg)
+		out, err := layoutText(in, p, cfg)
 		if out != nil || !errors.Is(err, paragraph.ErrInvalidInput) {
 			t.Fatalf("accepted invalid policy %+v: %v", p, err)
 		}
 	}
 	p := cssParams(paragraph.FirstFit, factor(1))
-	if out, err := paragraph.Run(in, p, khipu.Config{}); out != nil || err == nil {
+	if out, err := layoutText(in, p, khipu.Config{}); out != nil || err == nil {
 		t.Fatal("missing explicit services")
 	}
 	p.LineLayout.Default = factor(1e100)
-	if out, err := paragraph.Run(in, p, cfg); out != nil || err == nil {
+	if out, err := layoutText(in, p, cfg); out != nil || err == nil {
 		t.Fatal("overflow")
 	}
 	p = cssParams(paragraph.FirstFit, factor(1))
-	out, err := paragraph.Run(paragraph.Input{}, p, cfg)
+	out, err := layoutText(paragraph.Input{}, p, cfg)
 	if err != nil || out.VList.Box().Extent != 0 || out.VList.Box().HasBaseline || len(out.VList.Lines()) != 0 {
 		t.Fatal("empty", out, err)
 	}
@@ -247,7 +247,7 @@ func TestLineHeightNormalFontGap(t *testing.T) {
 		}
 		// Empty source has no lines; use a blank line with only strut metrics.
 		p := cssParams(paragraph.FirstFit, paragraph.LineHeight{Kind: paragraph.NormalHeight})
-		out, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("\n")}, p, cfg)
+		out, err := layoutText(paragraph.Input{Text: styled.TextFromString("\n")}, p, cfg)
 		if err != nil || out.VList.Lines()[0].Height != tc.height || out.VList.Lines()[0].Baseline != tc.baseline {
 			t.Fatal("normal gap", out, err)
 		}
@@ -267,7 +267,7 @@ func TestLineHeightAccumulatedOverflowAndMetricFailure(t *testing.T) {
 	cfg := synthetic()
 	p := cssParams(paragraph.FirstFit, length(dimen.Fil/5*2))
 	p.Constraints.Width = 5 * dimen.BP
-	out, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("a a a")}, p, cfg)
+	out, err := layoutText(paragraph.Input{Text: styled.TextFromString("a a a")}, p, cfg)
 	var e *paragraph.Error
 	if out != nil || !errors.As(err, &e) || e.Stage != paragraph.StageAssemble {
 		t.Fatal("accumulated height overflow", out, err)
@@ -281,7 +281,7 @@ func TestLineHeightAccumulatedOverflowAndMetricFailure(t *testing.T) {
 		return metricStream{s}, e
 	}
 	p = cssParams(paragraph.FirstFit, factor(1))
-	out, err = paragraph.Run(paragraph.Input{Text: styled.TextFromString("aa")}, p, cfg)
+	out, err = layoutText(paragraph.Input{Text: styled.TextFromString("aa")}, p, cfg)
 	if out != nil || !errors.Is(err, failure) {
 		t.Fatal("metric failure published result", out, err)
 	}
@@ -315,7 +315,7 @@ func TestLineHeightDifferentFontExtents(t *testing.T) {
 		}
 		p := cssParams(b, factor(1))
 		p.Constraints.Width = 100 * dimen.BP
-		out, err := paragraph.Run(paragraph.Input{Text: text}, p, cfg)
+		out, err := layoutText(paragraph.Input{Text: text}, p, cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -372,7 +372,7 @@ func TestLineHeightOverrideGapsKeepDefaultContribution(t *testing.T) {
 				for _, r := range tc.ranges {
 					p.LineLayout.Runs = append(p.LineLayout.Runs, paragraph.LineHeightSpan{Start: r[0], End: r[1], Height: factor(0)})
 				}
-				out, err := paragraph.Run(paragraph.Input{Text: text}, p, cfg)
+				out, err := layoutText(paragraph.Input{Text: text}, p, cfg)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -410,7 +410,7 @@ func TestCSSEmptyLinesAndPreservedContent(t *testing.T) {
 	for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
 		for _, source := range []string{"", " ", "\n", "\u00a0"} {
 			p := cssParams(breaker, factor(3))
-			out, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString(source)}, p, synthetic())
+			out, err := layoutText(paragraph.Input{Text: styled.TextFromString(source)}, p, synthetic())
 			if err != nil {
 				t.Fatal(err)
 			}

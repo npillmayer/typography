@@ -51,9 +51,11 @@ type PrefixInfo struct {
 // borrows stable assembly services. Release it after choosing; a selected frozen
 // fragment retains neither this object nor the trial. Zero is invalid.
 type PrefixFit struct {
-	trial   *Trial
-	tail    *layout.Fragment
-	choices []PrefixInfo
+	trial     *Trial
+	tail      *layout.Fragment
+	choices   []PrefixInfo
+	startLine int
+	positions []LogicalPosition
 }
 
 // FitPrefixes freezes/assembles this trial once and enumerates every whole-line
@@ -93,34 +95,69 @@ func (t *Trial) FitPrefixes(height float64) (*PrefixFit, error) {
 	for i, d := range decisions {
 		positions[i+1] = LogicalPosition{t.plan.Incarnation(), result.BreakPositions[i], d.End.Knot + 1}
 	}
-	from := positions[t.startLine]
-	fit := &PrefixFit{trial: t, tail: whole}
-	if whole.Range().End == 0 {
-		// Suppressed-empty assembly retains a diagnostic frozen line, not a
-		// visible line box. Complete it without creating a strut or a page.
-		fit.choices = []PrefixInfo{{Status: FitComplete, From: from, To: positions[len(decisions)]}}
-		return fit, nil
-	}
-	if t.startLine > 0 {
+	fit := &PrefixFit{trial: t, tail: whole, startLine: t.startLine, positions: positions}
+	if t.startLine > 0 && whole.Range().End > 0 {
 		_, fit.tail, err = splitPrefix(whole, t.startLine)
 		if err != nil {
 			return nil, &Error{StageAssemble, err}
 		}
 	}
-	if err := validateFitLocal(fit.tail); err != nil {
+	return fit.enumerate(height)
+}
+
+// Remainder returns the immutable unaccepted fragment used by this choice set.
+// The fragment retains no trial, preparation or assembly callbacks.
+func (f *PrefixFit) Remainder() *layout.Fragment {
+	if f == nil {
+		return nil
+	}
+	return f.tail
+}
+
+// Refit accepts an eligible local line count and enumerates the remaining tail
+// at a new height using only retained geometry. Pass zero to change height
+// without advancing. It preserves captured widths/skips, including mixed width
+// histories; changed widths or atomic geometry require a checkpoint and a new
+// Prepared.Trial instead. No binding, checkpointing, shaping, breaking, assembly
+// or service calls occur. The original choice set stays reusable. The returned
+// set shares the same trial and immutable position data, never its predecessor.
+// Heights follow FitPrefixes; invalid counts/heights return no result.
+func (f *PrefixFit) Refit(lines int, height float64) (*PrefixFit, error) {
+	if f == nil || f.trial == nil || !fitBounded(height) || height < 0 {
+		return nil, &Error{StageInput, invalidInput("invalid prefix refit")}
+	}
+	if slices.IndexFunc(f.choices, func(p PrefixInfo) bool { return p.Lines == lines }) < 0 {
+		return nil, &Error{StageInput, invalidInput("prefix does not fit")}
+	}
+	_, tail, err := splitPrefix(f.tail, lines)
+	if err != nil {
 		return nil, &Error{StageAssemble, err}
 	}
-	lines := fit.tail.Lines()
-	if len(lines) == 0 {
-		fit.choices = []PrefixInfo{{Status: FitComplete, From: from, To: from}}
-		return fit, nil
+	next := &PrefixFit{trial: f.trial, tail: tail, startLine: f.startLine + lines, positions: f.positions}
+	if len(f.tail.Lines()) == 0 && f.choices[0].Status == FitComplete {
+		next.startLine = len(f.positions) - 1
 	}
-	fit.choices = append(fit.choices, PrefixInfo{Status: FitNoProgress, From: from, To: from})
+	return next.enumerate(height)
+}
+
+func (f *PrefixFit) enumerate(height float64) (*PrefixFit, error) {
+	if err := validateFitLocal(f.tail); err != nil {
+		return nil, &Error{StageAssemble, err}
+	}
+	from := f.positions[f.startLine]
+	lines := f.tail.Lines()
+	if len(lines) == 0 {
+		// Suppressed-empty assembly retains a diagnostic frozen line, not a
+		// visible line box. Preserve its complete logical consumption.
+		f.choices = []PrefixInfo{{Status: FitComplete, From: from, To: f.positions[len(f.positions)-1]}}
+		return f, nil
+	}
+	f.choices = append(f.choices, PrefixInfo{Status: FitNoProgress, From: from, To: from})
 	width, overfull := 0.0, false
 	for i, line := range lines {
 		end := line.Top + line.Height
 		if i == len(lines)-1 {
-			end = math.Max(end, fit.tail.Box().Extent)
+			end = math.Max(end, f.tail.Box().Extent)
 		}
 		if !fitBounded(end) {
 			return nil, &Error{StageAssemble, fitInvalid("prefix end outside dimension domain")}
@@ -134,11 +171,11 @@ func (t *Trial) FitPrefixes(height float64) (*PrefixFit, error) {
 		if i == len(lines)-1 {
 			status = FitComplete
 		}
-		fit.choices = append(fit.choices, PrefixInfo{Lines: i + 1, Status: status, From: from,
-			To: positions[t.startLine+i+1], Width: width, Height: end, Overfull: overfull})
+		f.choices = append(f.choices, PrefixInfo{Lines: i + 1, Status: status, From: from,
+			To: f.positions[f.startLine+i+1], Width: width, Height: end, Overfull: overfull})
 	}
-	slices.Reverse(fit.choices)
-	return fit, nil
+	slices.Reverse(f.choices)
+	return f, nil
 }
 
 // Prefixes returns detached descriptors, in farther-progress-first order.
@@ -220,7 +257,7 @@ func (f *PrefixFit) Select(lines int) (*FittedPrefix, error) {
 		return nil, &Error{StageAssemble, fitInvalid("selected prefix exceeds its declared height")}
 	}
 	if out.info.Status != FitComplete {
-		out.checkpoint, err = f.trial.Checkpoint(f.trial.startLine + lines)
+		out.checkpoint, err = f.trial.Checkpoint(f.startLine + lines)
 		if err != nil {
 			return nil, err
 		}

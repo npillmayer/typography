@@ -1,3 +1,8 @@
+> This document records design or measurements from an earlier execution API.
+> For the supported preparation, trial, checkpoint and prefix-refitting APIs,
+> use the [paragraph guide](../glyphing/paragraph/README.md). Historical timings
+> are not measurements of the current implementation.
+
 # Reflow PR 4: independent paragraph trials
 
 Extension implemented 2026-11-26 (TYPE-SHIP-01): `Trial.FitPrefixes(height)` now

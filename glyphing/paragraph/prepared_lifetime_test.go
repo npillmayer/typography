@@ -8,6 +8,7 @@ import (
 	"weak"
 
 	"github.com/npillmayer/khipu"
+	"github.com/npillmayer/khipu/dimen"
 	"github.com/npillmayer/typography/glyphing/paragraph"
 	"github.com/npillmayer/typography/layout"
 )
@@ -35,23 +36,22 @@ func frozenLifetimeFixture(t *testing.T, mode string) (weak.Pointer[paragraph.Pr
 		}
 		return weak.Make(p), []*layout.Fragment{fragment}
 	}
-	initial, err := p.StartFlow(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	first := fitFlow(t, initial, frame(40, 10))
-	if first.Continuation == nil {
-		t.Fatal("fixture needs an unfinished paragraph")
-	}
-	target := frame(40, 1000)
+	initial := mustTrial(t, p, paragraph.TrialRequest{Layout: req})
+	choices := mustPrefixes(t, initial, 10)
+	first := selectPrefix(t, choices, 1)
+	var tail *paragraph.PrefixFit
 	if mode == "changed width" {
-		target = frame(30, 1000)
+		req.Params.Constraints.Width = 30 * dimen.BP
+		trial := mustTrial(t, p, paragraph.TrialRequest{Layout: req, Prefix: first.Checkpoint()})
+		tail = mustPrefixes(t, trial, 1000)
+	} else {
+		tail = refit(t, choices, 1, 1000)
 	}
-	last := fitFlow(t, first.Continuation, target)
-	if last.Status != paragraph.FitComplete || last.Continuation != nil {
+	last := selectPrefix(t, tail, tail.Prefixes()[0].Lines)
+	if last.Info().Status != paragraph.FitComplete || last.Checkpoint() != nil {
 		t.Fatal("fixture did not complete")
 	}
-	return weak.Make(p), []*layout.Fragment{first.Placed, last.Placed}
+	return weak.Make(p), []*layout.Fragment{first.Fragment(), last.Fragment()}
 }
 
 func TestFrozenFragmentsReleasePreparation(t *testing.T) {

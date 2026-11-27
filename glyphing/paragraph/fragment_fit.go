@@ -53,7 +53,7 @@ type FragmentFit struct {
 // points) without metrics, binding, shaping or breaking. All boundaries are eligible.
 // source attests the retained layout; target must equal it exactly. The complete
 // frozen owner must have source.Width, even for a suppressed-empty fragment. This
-// entry supports uniform-width owners; Continuation.Fit handles retained width history.
+// entry supports uniform-width owners; PrefixFit.Refit also handles mixed width histories.
 //
 // Height must be finite, nonnegative and below dimen.Fil. Zero-height lines count
 // as progress. Full CSS line heights, signed extents and source coordinates are
@@ -84,23 +84,6 @@ func FitFragment(f *layout.Fragment, source, target FragmentReuseKey, height flo
 		}
 	}
 	return fitRetained(f, source.Width, height)
-}
-
-// fitFlowFragment checks a privately retained width history, allowing a frozen
-// owner containing earlier widths while its unplaced tail has one uniform width.
-// No preparation or service handle enters this geometry-only boundary.
-func fitFlowFragment(f *layout.Fragment, history []dimen.DU, width dimen.DU, height float64) (*FragmentFit, error) {
-	for i := 0; i < f.Frozen().LineCount(); i++ {
-		want := width
-		if i < len(history) {
-			want = history[i]
-		}
-		line, ok := f.Frozen().Line(i)
-		if !ok || line.TargetWidth != want {
-			return nil, ErrIncompatibleFragment
-		}
-	}
-	return fitRetained(f, width, height)
 }
 
 func fitRetained(f *layout.Fragment, width dimen.DU, height float64) (*FragmentFit, error) {

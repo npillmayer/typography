@@ -41,7 +41,7 @@ func TestFragmentRealFontsAndOriginalSources(t *testing.T) {
 		for _, width := range []dimen.DU{0, 16 * dimen.BP} {
 			created := 0
 			cfg := khipu.Config{Streaming: &khipu.StreamingConfig{Resolver: mapper, Defaults: defaults, NewShaper: func() (contracts.StreamingShaper, error) { created++; return NewStream(8) }}}
-			r, err := paragraph.Run(paragraph.Input{Text: text, Direction: tc.direction}, paragraph.Params{Constraints: paragraph.Constraints{Width: width}, Breaker: paragraph.FirstFit, Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight}, LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.NormalHeight}}}, cfg)
+			r, err := layoutText(paragraph.Input{Text: text, Direction: tc.direction}, paragraph.Params{Constraints: paragraph.Constraints{Width: width}, Breaker: paragraph.FirstFit, Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight}, LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.NormalHeight}}}, cfg)
 			if err != nil {
 				t.Fatal(err)
 			}

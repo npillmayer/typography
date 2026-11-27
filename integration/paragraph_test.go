@@ -75,7 +75,7 @@ func (b *backend) Outline(contracts.FontFace, uint32) (render.Outline, error) {
 func proofInput(t *testing.T) (render.ParagraphInput, *guardedFace) {
 	t.Helper()
 	f := &guardedFace{}
-	p, err := paragraph.Run(paragraph.Input{Text: styled.TextFromString("aאב"), Direction: bidi.LeftToRight}, paragraph.Params{
+	p, err := layoutText(paragraph.Input{Text: styled.TextFromString("aאב"), Direction: bidi.LeftToRight}, paragraph.Params{
 		Constraints: paragraph.Constraints{Width: 100 * dimen.BP}, Breaker: paragraph.FirstFit, Assembly: paragraph.Options{Policy: paragraph.CSSLineHeight}, LineLayout: &paragraph.LineLayout{Default: paragraph.LineHeight{Kind: paragraph.NormalHeight}},
 	}, khipu.Config{Streaming: &khipu.StreamingConfig{Resolver: helpers.DefaultStyleResolver{}, Defaults: contracts.ResolvedRunStyle{Font: f, EmSize: 10 * dimen.BP}, NewShaper: func() (contracts.StreamingShaper, error) {
 		s, e := helpers.NewSyntheticStreamingShaper(8)

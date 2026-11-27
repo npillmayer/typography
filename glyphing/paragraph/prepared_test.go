@@ -199,7 +199,7 @@ func TestPreparedAtomicSignedAndVisualOrder(t *testing.T) {
 	}
 }
 
-func TestPreparedZeroWidthAndTextOnlyCompatibility(t *testing.T) {
+func TestPreparedZeroWidthAndTextCoverage(t *testing.T) {
 	for _, breaker := range []paragraph.Breaker{paragraph.FirstFit, paragraph.KnuthPlass} {
 		for _, value := range []string{"", "aa aa aa", "ab\u00adcd"} {
 			cfg := synthetic()
@@ -215,12 +215,8 @@ func TestPreparedZeroWidthAndTextOnlyCompatibility(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				want, err := paragraph.Run(input, p, cfg)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !reflect.DeepEqual(got.BreakPositions, want.BreakPositions) || !reflect.DeepEqual(got.VList.Lines(), want.VList.Lines()) || got.VList.Box() != want.VList.Box() || len(got.VList.AtomicPlacements()) != 0 {
-					t.Fatal("legacy text geometry changed", breaker, value, width)
+				if got.Frozen.SourceLen() != uint64(len(value)) || len(got.VList.AtomicPlacements()) != 0 {
+					t.Fatal("text source/atomic coverage", breaker, value, width)
 				}
 			}
 		}
@@ -248,14 +244,12 @@ func TestPreparedStageErrorsAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := paragraph.LayoutRequest{Params: mixedParams(paragraph.FirstFit, 100*dimen.BP), Atomics: []paragraph.AtomicBox{atomicBox(1, 2, 3)}}
-	out, err := paragraph.Run(input, request.Params, synthetic())
-	requireStage(t, out, err, paragraph.StageInput, khipu.ErrIllegalArguments)
 	input.Atomics[0].ByteOffset = 1
 	bad, err := paragraph.Prepare(input, khipu.PrepareOptions{}, synthetic())
 	requireStage(t, bad, err, paragraph.StagePrepare, khipu.ErrIllegalArguments)
 	input.Atomics[0].ByteOffset = 0
 	var nilPrepared *paragraph.Prepared
-	out, err = nilPrepared.Layout(request)
+	out, err := nilPrepared.Layout(request)
 	requireStage(t, out, err, paragraph.StageInput, khipu.ErrIllegalArguments)
 	out, err = new(paragraph.Prepared).Layout(request)
 	requireStage(t, out, err, paragraph.StageInput, khipu.ErrIllegalArguments)

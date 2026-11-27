@@ -8,9 +8,9 @@ import (
 	"github.com/npillmayer/typography/style"
 )
 
-// TypographyStyle is M's projection of a document style for the typesetter.
-// It contains no paint. The private domain preserves relative feature origins
-// across shaping fragments.
+// TypographyStyle adapts paint-free document typography to styled.Style.
+// The private domain preserves relative feature origins across shaping fragments.
+// Keep projected values intact when storing or passing styled text.
 type TypographyStyle struct {
 	Typography style.Typography
 	domain     uint64

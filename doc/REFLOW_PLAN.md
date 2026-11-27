@@ -1,3 +1,8 @@
+> This document records design or measurements from an earlier execution API.
+> For the supported preparation, trial, checkpoint and prefix-refitting APIs,
+> use the [paragraph guide](../glyphing/paragraph/README.md). Historical timings
+> are not measurements of the current implementation.
+
 # Region registers and speculative reflow
 
 Design and migration plan, updated 2026-11-20. **PRs 1–4 are implemented across khipu,
